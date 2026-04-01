@@ -1,27 +1,36 @@
-# 本地开发版 GeoCache（使用 SQLite，无需 Docker）
 version: "3.9"
 
 services:
+  geocache-db:
+    image: postgres:16-alpine
+    container_name: geocache-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=geocache
+      - POSTGRES_PASSWORD=geocache
+      - POSTGRES_DB=geocache
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geocache -d geocache"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   geocache-api:
     build: .
     container_name: geocache-api
     restart: unless-stopped
+    depends_on:
+      geocache-db:
+        condition: service_healthy
     environment:
       - APP_ENV=prod
-      - DATABASE_URL=sqlite:///./data/geocache.db
+      - DATABASE_URL=postgresql+psycopg://geocache:geocache@geocache-db:5432/geocache
       - API_KEYS=change_me_api_key
       - TZ=Asia/Shanghai
+    volumes:
+      - ./data:/app/data
     ports:
       - "18080:8080"
-
-  # 可选：生产环境切换为 Postgres 时启用
-  # geocache-db:
-  #   image: postgres:16-alpine
-  #   container_name: geocache-db
-  #   restart: unless-stopped
-  #   environment:
-  #     - POSTGRES_USER=geocache
-  #     - POSTGRES_PASSWORD=geocache
-  #     - POSTGRES_DB=geocache
-  #   volumes:
-  #     - ./data/postgres:/var/lib/postgresql/data

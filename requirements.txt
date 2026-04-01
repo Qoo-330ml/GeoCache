@@ -1,5 +1,5 @@
 fastapi==0.115.0
-uvicorn[standard]==0.30.6
+uvicorn==0.30.6
 sqlalchemy==2.0.34
-# Postgres 生产环境需要: psycopg2-binary==2.9.9
+psycopg[binary]==3.2.1
 pydantic==2.9.2
