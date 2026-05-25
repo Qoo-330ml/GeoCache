@@ -34,6 +34,7 @@ type licenseVerifyRequest struct {
 	BeijingTime string `json:"beijing_time"`
 	InstanceID  string `json:"instance_id"`
 	QmbyVersion string `json:"qmby_version"`
+	EmbyServer  string `json:"emby_server"`
 }
 
 func (a *app) telemetryStats(c *gin.Context) {
@@ -195,6 +196,7 @@ func recordClientSeen(tx *gorm.DB, c *gin.Context, req licenseVerifyRequest, cod
 	email := normalizeEmail(req.Email)
 	instanceID := truncate(strings.TrimSpace(req.InstanceID), 128)
 	version := truncate(strings.TrimSpace(req.QmbyVersion), 64)
+	embyServer := truncate(strings.TrimSpace(req.EmbyServer), 128)
 	ip := firstNonEmpty(seen.IP, c.ClientIP())
 	key := clientKey(email, instanceID, ip)
 	if key == "" {
@@ -208,6 +210,7 @@ func recordClientSeen(tx *gorm.DB, c *gin.Context, req licenseVerifyRequest, cod
 		Member:                member,
 		InstanceID:            instanceID,
 		QmbyVersion:           version,
+		EmbyServer:            embyServer,
 		FirstSeenAt:           serverNow,
 		LastSeenAt:            serverNow,
 		LastClientBeijingTime: &clientTime,
@@ -231,6 +234,7 @@ func recordClientSeen(tx *gorm.DB, c *gin.Context, req licenseVerifyRequest, cod
 			"member":                   client.Member,
 			"instance_id":              client.InstanceID,
 			"qmby_version":             client.QmbyVersion,
+			"emby_server":              client.EmbyServer,
 			"last_seen_at":             client.LastSeenAt,
 			"last_client_beijing_time": client.LastClientBeijingTime,
 			"last_ip":                  client.LastIP,

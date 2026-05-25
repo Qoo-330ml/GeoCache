@@ -267,6 +267,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 		code.LastClientBeijingTime = &clientTime
 		code.LastInstanceID = strings.TrimSpace(req.InstanceID)
 		code.LastQmbyVersion = strings.TrimSpace(req.QmbyVersion)
+		code.LastEmbyServer = strings.TrimSpace(req.EmbyServer)
 		code.LastIP = c.ClientIP()
 		code.VerifyCount++
 		member = code.Status == StatusActive && (code.ExpiresAt == nil || code.ExpiresAt.After(serverNow))
@@ -282,6 +283,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 			Member:            member,
 			InstanceID:        strings.TrimSpace(req.InstanceID),
 			QmbyVersion:       strings.TrimSpace(req.QmbyVersion),
+			EmbyServer:        strings.TrimSpace(req.EmbyServer),
 			ClientBeijingTime: clientTime,
 			ServerBeijingTime: serverNow,
 			IP:                c.ClientIP(),
@@ -301,6 +303,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 					Member:            false,
 					InstanceID:        strings.TrimSpace(req.InstanceID),
 					QmbyVersion:       strings.TrimSpace(req.QmbyVersion),
+					EmbyServer:        strings.TrimSpace(req.EmbyServer),
 					ClientBeijingTime: clientTime,
 					ServerBeijingTime: serverNow,
 					IP:                c.ClientIP(),

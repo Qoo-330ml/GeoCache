@@ -287,8 +287,8 @@ const adminHTML = `<!doctype html>
         </div>
         <div style="height:14px"></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>邮箱 / 实例</th><th>会员</th><th>版本</th><th>IP</th><th>归属地</th><th>首次联网</th><th>最近联网</th><th>次数</th></tr></thead>
-          <tbody id="clientRows"><tr><td colspan="8">加载中...</td></tr></tbody>
+          <thead><tr><th>邮箱 / 实例</th><th>会员</th><th>版本</th><th>Emby</th><th>IP</th><th>归属地</th><th>首次联网</th><th>最近联网</th><th>次数</th></tr></thead>
+          <tbody id="clientRows"><tr><td colspan="9">加载中...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -472,19 +472,20 @@ const adminHTML = `<!doctype html>
             "<td><strong>" + esc(row.email || "-") + "</strong>" + instance + "</td>" +
             "<td><span class=\"badge " + (row.member ? "active" : "disabled") + "\">" + member + "</span><div class=\"note\">" + esc(row.status || "-") + "</div></td>" +
             "<td>" + esc(row.qmby_version || "-") + "</td>" +
+            "<td>" + esc(row.emby_server || "-") + "</td>" +
             "<td><code>" + esc(row.last_ip || "-") + "</code></td>" +
             "<td>" + esc(location || "未知位置") + isp + "</td>" +
             "<td>" + fmtFull(row.first_seen_at) + "</td>" +
             "<td>" + fmtFull(row.last_seen_at) + "</td>" +
             "<td>" + (row.report_count || 0) + "</td>" +
           "</tr>";
-        }).join("") || "<tr><td colspan=\"8\">暂无客户端记录</td></tr>";
+        }).join("") || "<tr><td colspan=\"9\">暂无客户端记录</td></tr>";
       } catch (err) {
         if (err.message === "unauthorized") {
           showLogin();
           return;
         }
-        $("clientRows").innerHTML = "<tr><td colspan=\"8\">" + esc(err.message) + "</td></tr>";
+        $("clientRows").innerHTML = "<tr><td colspan=\"9\">" + esc(err.message) + "</td></tr>";
       }
     }
     function toggleIPBests() {

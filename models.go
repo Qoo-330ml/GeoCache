@@ -43,6 +43,7 @@ type ActivationCode struct {
 	LastClientBeijingTime *time.Time `json:"last_client_beijing_time"`
 	LastInstanceID        string     `gorm:"size:128" json:"last_instance_id"`
 	LastQmbyVersion       string     `gorm:"size:64" json:"last_qmby_version"`
+	LastEmbyServer        string     `gorm:"size:128" json:"last_emby_server"`
 	FirstIP               string     `gorm:"size:64" json:"first_ip"`
 	LastIP                string     `gorm:"size:64" json:"last_ip"`
 	VerifyCount           int        `gorm:"not null;default:0" json:"verify_count"`
@@ -60,6 +61,7 @@ type LicenseCheck struct {
 	Member            bool      `gorm:"index" json:"member"`
 	InstanceID        string    `gorm:"size:128" json:"instance_id"`
 	QmbyVersion       string    `gorm:"size:64" json:"qmby_version"`
+	EmbyServer        string    `gorm:"size:128" json:"emby_server"`
 	ClientBeijingTime time.Time `json:"client_beijing_time"`
 	ServerBeijingTime time.Time `gorm:"index" json:"server_beijing_time"`
 	IP                string    `gorm:"size:64" json:"ip"`
@@ -81,6 +83,7 @@ type ClientInstall struct {
 	Member                bool       `gorm:"index" json:"member"`
 	InstanceID            string     `gorm:"index;size:128" json:"instance_id"`
 	QmbyVersion           string     `gorm:"size:64" json:"qmby_version"`
+	EmbyServer            string     `gorm:"size:128" json:"emby_server"`
 	FirstSeenAt           time.Time  `gorm:"autoCreateTime;index" json:"first_seen_at"`
 	LastSeenAt            time.Time  `gorm:"index" json:"last_seen_at"`
 	LastClientBeijingTime *time.Time `json:"last_client_beijing_time"`
@@ -129,5 +132,3 @@ type IPBest struct {
 	Count     int       `gorm:"not null;default:0" json:"count"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
-
-
