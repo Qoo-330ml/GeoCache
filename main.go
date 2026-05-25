@@ -43,6 +43,7 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
+	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/admin") })
 	r.GET("/admin", serveAdmin)
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	r.POST("/api/license/verify", a.requireLicenseKey(), a.verifyLicense)
