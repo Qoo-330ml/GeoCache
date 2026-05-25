@@ -81,7 +81,7 @@ func (a *app) listClients(c *gin.Context) {
 	tx := a.db.Model(&ClientInstall{})
 	if search := strings.TrimSpace(c.Query("search")); search != "" {
 		like := "%" + strings.ToLower(search) + "%"
-		tx = tx.Where("LOWER(email) LIKE ? OR LOWER(instance_id) LIKE ? OR last_ip LIKE ? OR LOWER(location) LIKE ? OR LOWER(isp) LIKE ?", like, like, "%"+search+"%", like, like)
+		tx = tx.Where("LOWER(email) LIKE ? OR LOWER(instance_id) LIKE ? OR last_ip LIKE ?", like, like, "%"+search+"%")
 	}
 	if active := strings.TrimSpace(c.Query("active")); active == "1" || strings.EqualFold(active, "true") {
 		tx = tx.Where("last_seen_at >= ?", time.Now().In(beijingLocation()).Add(-activeClientWindow))
