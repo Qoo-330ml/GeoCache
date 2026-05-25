@@ -58,6 +58,8 @@ func main() {
 	admin.GET("/stats", a.telemetryStats)
 	admin.GET("/clients", a.listClients)
 	admin.GET("/ip-bests", a.listIPBests)
+	admin.GET("/features", a.listFeatures)
+	admin.PUT("/features", a.updateFeatures)
 
 	addr := env("SERVER_ADDR", ":2090")
 	log.Printf("qmby-license-server listening on %s", addr)
@@ -218,6 +220,63 @@ func (a *app) disableCode(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "disabled"})
 }
 
+func (a *app) listFeatures(c *gin.Context) {
+	policies, err := a.featurePolicies()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"features": policies})
+}
+
+func (a *app) updateFeatures(c *gin.Context) {
+	var req struct {
+		Features []FeaturePolicy `json:"features"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	if len(req.Features) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "features required"})
+		return
+	}
+	err := a.db.Transaction(func(tx *gorm.DB) error {
+		for i, item := range req.Features {
+			key := strings.TrimSpace(item.Key)
+			if key == "" {
+				continue
+			}
+			access := normalizeFeatureAccess(item.Access)
+			label := strings.TrimSpace(item.Label)
+			if label == "" {
+				label = key
+			}
+			policy := FeaturePolicy{
+				Key:       key,
+				Label:     label,
+				Access:    access,
+				Enabled:   item.Enabled,
+				SortOrder: i + 1,
+			}
+			if err := tx.Where("key = ?", key).Assign(policy).FirstOrCreate(&policy).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	policies, err := a.featurePolicies()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"features": policies})
+}
+
 func (a *app) verifyLicense(c *gin.Context) {
 	var req licenseVerifyRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -237,6 +296,11 @@ func (a *app) verifyLicense(c *gin.Context) {
 		clientTime = serverNow
 	}
 	seen := clientSeenPayload(req, c)
+	featurePolicies, featureErr := a.featurePolicyPayload()
+	if featureErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"member": false, "error": featureErr.Error()})
+		return
+	}
 
 	var code ActivationCode
 	member := false
@@ -314,7 +378,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 				}
 				return recordClientSeen(tx, c, req, nil, false, "none", serverNow, clientTime, seen)
 			})
-			c.JSON(http.StatusOK, gin.H{"member": false, "status": "none", "server_beijing_time": serverNow})
+			c.JSON(http.StatusOK, gin.H{"member": false, "status": "none", "server_beijing_time": serverNow, "features": featurePolicies})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"member": false, "error": err.Error()})
@@ -329,7 +393,43 @@ func (a *app) verifyLicense(c *gin.Context) {
 		"starts_at":           code.StartsAt,
 		"expires_at":          code.ExpiresAt,
 		"server_beijing_time": serverNow,
+		"features":            featurePolicies,
 	})
+}
+
+func (a *app) featurePolicies() ([]FeaturePolicy, error) {
+	var policies []FeaturePolicy
+	if err := a.db.Order("sort_order ASC, id ASC").Find(&policies).Error; err != nil {
+		return nil, err
+	}
+	return policies, nil
+}
+
+func (a *app) featurePolicyPayload() (map[string]FeaturePolicyPayload, error) {
+	policies, err := a.featurePolicies()
+	if err != nil {
+		return nil, err
+	}
+	payload := make(map[string]FeaturePolicyPayload, len(policies))
+	for _, policy := range policies {
+		payload[policy.Key] = FeaturePolicyPayload{
+			Label:   policy.Label,
+			Access:  normalizeFeatureAccess(policy.Access),
+			Enabled: policy.Enabled,
+		}
+	}
+	return payload, nil
+}
+
+func normalizeFeatureAccess(access string) string {
+	switch strings.ToLower(strings.TrimSpace(access)) {
+	case FeatureAccessFree:
+		return FeatureAccessFree
+	case FeatureAccessDisabled:
+		return FeatureAccessDisabled
+	default:
+		return FeatureAccessMember
+	}
 }
 
 func normalizeEmail(email string) string {

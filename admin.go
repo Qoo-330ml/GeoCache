@@ -138,6 +138,9 @@ const adminHTML = `<!doctype html>
     .client-filters { display: grid; grid-template-columns: 1fr 130px 130px auto; gap: 12px; align-items: end; }
     .ip-bests-filters { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
     .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+    .feature-card { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: rgba(255,255,255,.38); display: grid; gap: 10px; }
+    .feature-title { font-weight: 700; }
     .stat { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: rgba(255,255,255,.38); }
     .stat-value { font-size: 25px; font-weight: 780; line-height: 1.1; }
     .stat-label { color: var(--muted); font-size: 12px; margin-top: 6px; }
@@ -180,7 +183,7 @@ const adminHTML = `<!doctype html>
     @media (max-width: 820px) {
 	      header, .generated { align-items: stretch; flex-direction: column; }
       .grid, .filters { grid-template-columns: 1fr; }
-      .client-filters, .stats-grid, .ip-bests-filters { grid-template-columns: 1fr; }
+      .client-filters, .stats-grid, .features-grid, .ip-bests-filters { grid-template-columns: 1fr; }
 	      .header-actions { flex-direction: column; align-items: stretch; }
 	      button { width: 100%; }
 	    }
@@ -234,6 +237,16 @@ const adminHTML = `<!doctype html>
           <div class="stat"><div id="statChecks24h" class="stat-value">-</div><div class="stat-label">24小时校验</div></div>
           <div class="stat"><div id="statIPReports" class="stat-value">-</div><div class="stat-label">IP归属地记录</div></div>
         </div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>功能权限</h2></div>
+      <div class="panel-body">
+        <div id="featureRows" class="features-grid"></div>
+        <div style="height:14px"></div>
+        <button onclick="saveFeatures()">保存功能权限</button>
+        <div id="featureMessage" class="msg"></div>
       </div>
     </section>
 
@@ -312,6 +325,8 @@ const adminHTML = `<!doctype html>
   <script>
     const levelLabels = { trial: "7天试用", yearly: "年费会员", permanent: "永久会员", beta: "内测会员" };
     const statusLabels = { issued: "待激活", active: "已激活", disabled: "已禁用", expired: "已过期" };
+    const featureAccessLabels = { free: "普通可用", member: "会员可用", disabled: "关闭功能" };
+    let features = [];
     let timer = 0;
     let clientTimer = 0;
     let ipBestTimer = 0;
@@ -379,7 +394,7 @@ const adminHTML = `<!doctype html>
       return String(value || "").replace(/[&<>"']/g, s => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[s]));
     }
     async function refreshAll() {
-      await Promise.all([loadStats(), loadCodes(), loadClients()]);
+      await Promise.all([loadStats(), loadFeatures(), loadCodes(), loadClients()]);
     }
     async function loadStats() {
       try {
@@ -400,6 +415,53 @@ const adminHTML = `<!doctype html>
     function loadClientsDebounced() {
       clearTimeout(clientTimer);
       clientTimer = setTimeout(loadClients, 250);
+    }
+    async function loadFeatures() {
+      try {
+        const data = await api("/api/admin/features");
+        features = data.features || [];
+        $("featureRows").innerHTML = features.map((feature, index) =>
+          "<div class=\"feature-card\">" +
+            "<div>" +
+              "<div class=\"feature-title\">" + esc(feature.label) + "</div>" +
+              "<div class=\"note\"><code>" + esc(feature.key) + "</code></div>" +
+            "</div>" +
+            "<div><label>权限</label><select id=\"featureAccess" + index + "\">" +
+              Object.keys(featureAccessLabels).map(key => "<option value=\"" + key + "\"" + (feature.access === key ? " selected" : "") + ">" + featureAccessLabels[key] + "</option>").join("") +
+            "</select></div>" +
+            "<div><label>状态</label><select id=\"featureEnabled" + index + "\">" +
+              "<option value=\"1\"" + (feature.enabled ? " selected" : "") + ">启用</option>" +
+              "<option value=\"0\"" + (!feature.enabled ? " selected" : "") + ">禁用</option>" +
+            "</select></div>" +
+          "</div>"
+        ).join("") || "<p>暂无功能配置</p>";
+      } catch (err) {
+        if (err.message === "unauthorized") {
+          showLogin();
+          return;
+        }
+        $("featureRows").innerHTML = "<p>" + esc(err.message) + "</p>";
+      }
+    }
+    async function saveFeatures() {
+      $("featureMessage").textContent = "";
+      try {
+        const payload = features.map((feature, index) => ({
+          key: feature.key,
+          label: feature.label,
+          access: $("featureAccess" + index).value,
+          enabled: $("featureEnabled" + index).value === "1"
+        }));
+        const data = await api("/api/admin/features", {
+          method: "PUT",
+          body: JSON.stringify({ features: payload })
+        });
+        features = data.features || [];
+        $("featureMessage").textContent = "功能权限已保存，Qmby 点击立即验证后生效";
+        loadFeatures();
+      } catch (err) {
+        $("featureMessage").textContent = err.message;
+      }
     }
     async function loadCodes() {
       const params = new URLSearchParams();

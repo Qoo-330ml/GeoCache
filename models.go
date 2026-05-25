@@ -12,6 +12,10 @@ const (
 	StatusActive   = "active"
 	StatusDisabled = "disabled"
 	StatusExpired  = "expired"
+
+	FeatureAccessFree     = "free"
+	FeatureAccessMember   = "member"
+	FeatureAccessDisabled = "disabled"
 )
 
 var levelDurationDays = map[string]int{
@@ -26,6 +30,31 @@ var levelDisplayNames = map[string]string{
 	LevelYearly:    "年费会员",
 	LevelPermanent: "永久会员",
 	LevelBeta:      "内测会员",
+}
+
+type FeaturePolicy struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Key       string    `gorm:"uniqueIndex;size:64;not null" json:"key"`
+	Label     string    `gorm:"size:64;not null" json:"label"`
+	Access    string    `gorm:"size:16;not null;default:member" json:"access"`
+	Enabled   bool      `gorm:"not null;default:true" json:"enabled"`
+	SortOrder int       `gorm:"not null;default:0" json:"sort_order"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+type FeaturePolicyPayload struct {
+	Label   string `json:"label"`
+	Access  string `json:"access"`
+	Enabled bool   `json:"enabled"`
+}
+
+var defaultFeaturePolicies = []FeaturePolicy{
+	{Key: "account", Label: "号池管理", Access: FeatureAccessFree, Enabled: true, SortOrder: 10},
+	{Key: "strm_task", Label: "Strm 任务", Access: FeatureAccessFree, Enabled: true, SortOrder: 20},
+	{Key: "upload_monitor", Label: "文件监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 30},
+	{Key: "organizer", Label: "识别整理", Access: FeatureAccessMember, Enabled: true, SortOrder: 40},
+	{Key: "playback_monitor", Label: "播放监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 50},
 }
 
 type ActivationCode struct {
