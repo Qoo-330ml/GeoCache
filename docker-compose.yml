@@ -1,6 +1,7 @@
 services:
   qmby-license:
     build: .
+    image: qmby
     container_name: qmby-license
     restart: unless-stopped
     ports:
