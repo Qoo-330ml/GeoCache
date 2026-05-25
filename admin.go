@@ -270,8 +270,8 @@ const adminHTML = `<!doctype html>
         </div>
         <div style="height:14px"></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>邮箱</th><th>等级</th><th>状态</th><th>前缀</th><th>开始</th><th>到期</th><th>最近联网</th><th>次数</th><th>操作</th></tr></thead>
-          <tbody id="rows"><tr><td colspan="9">加载中...</td></tr></tbody>
+          <thead><tr><th>邮箱</th><th>等级</th><th>状态</th><th>前缀</th><th>开始</th><th>到期</th><th>最近联网</th><th>校验次数</th><th>客户端数</th><th>操作</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="10">加载中...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -419,14 +419,15 @@ const adminHTML = `<!doctype html>
             "<td>" + fmt(row.expires_at, !row.expires_at) + "</td>" +
             "<td>" + fmt(row.last_seen_at) + "</td>" +
             "<td>" + (row.verify_count || 0) + "</td>" +
+            "<td>" + ((data.client_counts || {})[row.id] || 0) + "</td>" +
             "<td>" + (row.status !== "disabled" ? "<button class=\"danger\" onclick=\"disableCode(" + row.id + ")\">禁用</button>" : "") + "</td>" +
-          "</tr>").join("") || "<tr><td colspan=\"9\">暂无激活码</td></tr>";
+          "</tr>").join("") || "<tr><td colspan=\"10\">暂无激活码</td></tr>";
 	      } catch (err) {
 	        if (err.message === "unauthorized") {
 	          showLogin();
 	          return;
 	        }
-	        $("rows").innerHTML = "<tr><td colspan=\"9\">" + esc(err.message) + "</td></tr>";
+	        $("rows").innerHTML = "<tr><td colspan=\"10\">" + esc(err.message) + "</td></tr>";
 	      }
     }
     async function createCode() {

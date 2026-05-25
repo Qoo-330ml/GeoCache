@@ -131,7 +131,23 @@ func (a *app) listCodes(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"codes": codes, "total": total})
+
+	var clientCounts []struct {
+		ActivationCodeID uint
+		ClientCount      int64
+	}
+	a.db.Model(&ClientInstall{}).
+		Select("activation_code_id, COUNT(DISTINCT client_key) AS client_count").
+		Where("activation_code_id > 0").
+		Group("activation_code_id").
+		Find(&clientCounts)
+
+	countMap := make(map[uint]int64)
+	for _, cc := range clientCounts {
+		countMap[cc.ActivationCodeID] = cc.ClientCount
+	}
+
+	c.JSON(http.StatusOK, gin.H{"codes": codes, "total": total, "client_counts": countMap})
 }
 
 func (a *app) createCode(c *gin.Context) {
