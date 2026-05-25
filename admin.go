@@ -136,6 +136,7 @@ const adminHTML = `<!doctype html>
 	    .header-actions { display: flex; gap: 10px; align-items: center; }
     .filters { display: grid; grid-template-columns: 1fr 150px 150px auto; gap: 12px; align-items: end; }
     .client-filters { display: grid; grid-template-columns: 1fr 130px 130px auto; gap: 12px; align-items: end; }
+    .ip-bests-filters { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
     .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
     .stat { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: rgba(255,255,255,.38); }
     .stat-value { font-size: 25px; font-weight: 780; line-height: 1.1; }
@@ -179,7 +180,7 @@ const adminHTML = `<!doctype html>
     @media (max-width: 820px) {
 	      header, .generated { align-items: stretch; flex-direction: column; }
       .grid, .filters { grid-template-columns: 1fr; }
-      .client-filters, .stats-grid { grid-template-columns: 1fr; }
+      .client-filters, .stats-grid, .ip-bests-filters { grid-template-columns: 1fr; }
 	      .header-actions { flex-direction: column; align-items: stretch; }
 	      button { width: 100%; }
 	    }
@@ -217,9 +218,10 @@ const adminHTML = `<!doctype html>
 	        <p>独立授权服务：生成邮箱绑定激活码，Qmby 联网后按邮箱校验会员。</p>
 	      </div>
 	      <div class="header-actions">
-	        <button class="secondary" onclick="refreshAll()">刷新</button>
-	        <button class="secondary" onclick="logout()">退出登录</button>
-	      </div>
+        <button class="secondary" onclick="toggleIPBests()">IP归属地数据库</button>
+        <button class="secondary" onclick="refreshAll()">刷新</button>
+        <button class="secondary" onclick="logout()">退出登录</button>
+      </div>
 	    </header>
 
     <section class="panel">
@@ -290,6 +292,21 @@ const adminHTML = `<!doctype html>
         </table></div>
       </div>
     </section>
+
+    <section id="ipBestsPanel" class="panel hidden">
+      <div class="panel-head"><h2>IP归属地数据库</h2></div>
+      <div class="panel-body">
+        <div class="ip-bests-filters">
+          <div><label>搜索 IP、地址、运营商或来源</label><input id="ipBestSearch" placeholder="IP、地址、运营商或来源" oninput="loadIPBestsDebounced()" /></div>
+          <button class="secondary" onclick="loadIPBests()">查询</button>
+        </div>
+        <div style="height:14px"></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>IP</th><th>位置</th><th>区划</th><th>街道</th><th>运营商</th><th>经纬度</th><th>来源</th><th>上报次数</th><th>更新时间</th></tr></thead>
+          <tbody id="ipBestRows"><tr><td colspan="9">加载中...</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -297,6 +314,7 @@ const adminHTML = `<!doctype html>
     const statusLabels = { issued: "待激活", active: "已激活", disabled: "已禁用", expired: "已过期" };
     let timer = 0;
     let clientTimer = 0;
+    let ipBestTimer = 0;
 
     function $(id) { return document.getElementById(id); }
 	    function authHeader() {
@@ -469,7 +487,42 @@ const adminHTML = `<!doctype html>
         $("clientRows").innerHTML = "<tr><td colspan=\"8\">" + esc(err.message) + "</td></tr>";
       }
     }
-	    initAuth();
+    function toggleIPBests() {
+      const panel = $("ipBestsPanel");
+      panel.classList.toggle("hidden");
+      if (!panel.classList.contains("hidden")) loadIPBests();
+    }
+    function loadIPBestsDebounced() {
+      clearTimeout(ipBestTimer);
+      ipBestTimer = setTimeout(loadIPBests, 250);
+    }
+    async function loadIPBests() {
+      const params = new URLSearchParams();
+      if ($("ipBestSearch").value.trim()) params.set("search", $("ipBestSearch").value.trim());
+      params.set("limit", "100");
+      try {
+        const data = await api("/api/admin/ip-bests?" + params.toString());
+        $("ipBestRows").innerHTML = (data.bests || []).map(row => {
+          const location = [row.location, row.district, row.street].filter(Boolean).join(" · ");
+          const latlng = [row.latitude, row.longitude].filter(v => v != null).join(", ");
+          return "<tr>" +
+            "<td><code>" + esc(row.ip) + "</code></td>" +
+            "<td>" + esc(row.location || "-") + "</td>" +
+            "<td>" + esc(row.district || "-") + "</td>" +
+            "<td>" + esc(row.street || "-") + "</td>" +
+            "<td>" + esc(row.isp || "-") + "</td>" +
+            "<td>" + esc(latlng || "-") + "</td>" +
+            "<td>" + esc(row.provider || "-") + "</td>" +
+            "<td>" + (row.count || 0) + "</td>" +
+            "<td>" + fmtFull(row.updated_at) + "</td>" +
+          "</tr>";
+        }).join("") || "<tr><td colspan=\"9\">暂无IP归属地数据</td></tr>";
+      } catch (err) {
+        if (err.message === "unauthorized") { showLogin(); return; }
+        $("ipBestRows").innerHTML = "<tr><td colspan=\"9\">" + esc(err.message) + "</td></tr>";
+      }
+    }
+    initAuth();
 	    if (localStorage.getItem("adminPass")) {
 	      login();
 	    } else {

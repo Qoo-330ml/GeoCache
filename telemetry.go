@@ -326,6 +326,33 @@ func clientKey(email, instanceID, ip string) string {
 	return ""
 }
 
+func (a *app) listIPBests(c *gin.Context) {
+	limit := parsePositiveInt(c.DefaultQuery("limit", "100"), 100, 200)
+	offset := parsePositiveInt(c.DefaultQuery("offset", "0"), 0, 1000000)
+
+	tx := a.db.Model(&IPBest{})
+	if search := strings.TrimSpace(c.Query("search")); search != "" {
+		like := "%" + strings.ToLower(search) + "%"
+		tx = tx.Where("LOWER(ip) LIKE ? OR LOWER(location) LIKE ? OR LOWER(district) LIKE ? OR LOWER(street) LIKE ? OR LOWER(isp) LIKE ? OR LOWER(provider) LIKE ?", like, like, like, like, like, like)
+	}
+
+	var total int64
+	if err := tx.Count(&total).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	var bests []IPBest
+	if err := tx.Order("count DESC, updated_at DESC, id DESC").Limit(limit).Offset(offset).Find(&bests).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"bests": bests,
+		"total": total,
+	})
+}
+
 func parsePositiveInt(value string, fallback, max int) int {
 	n, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil || n < 0 {

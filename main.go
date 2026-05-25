@@ -57,6 +57,7 @@ func main() {
 	admin.POST("/codes/:id/disable", a.disableCode)
 	admin.GET("/stats", a.telemetryStats)
 	admin.GET("/clients", a.listClients)
+	admin.GET("/ip-bests", a.listIPBests)
 
 	addr := env("SERVER_ADDR", ":2090")
 	log.Printf("qmby-license-server listening on %s", addr)
