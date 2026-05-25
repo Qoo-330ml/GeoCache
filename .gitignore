@@ -1,5 +1,6 @@
 data/
 license-server
+qmby-license-server
 *.db
 *.db-shm
 *.db-wal
