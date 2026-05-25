@@ -12,11 +12,6 @@ const (
 	StatusActive   = "active"
 	StatusDisabled = "disabled"
 	StatusExpired  = "expired"
-
-	OrderStatusPending     = "pending"
-	OrderStatusPaid        = "paid"
-	OrderStatusFulfilled   = "fulfilled"
-	OrderStatusEmailFailed = "email_failed"
 )
 
 var levelDurationDays = map[string]int{
@@ -135,27 +130,4 @@ type IPBest struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
-type PurchaseOrder struct {
-	ID                  uint       `gorm:"primaryKey" json:"id"`
-	OrderNo             string     `gorm:"uniqueIndex;size:64;not null" json:"order_no"`
-	Email               string     `gorm:"index;size:320;not null" json:"email"`
-	Level               string     `gorm:"index;size:32;not null" json:"level"`
-	Amount              string     `gorm:"size:32;not null" json:"amount"`
-	Status              string     `gorm:"index;size:32;not null;default:pending" json:"status"`
-	ActivationCodeID    *uint      `gorm:"index" json:"activation_code_id"`
-	ActivationCodePlain string     `gorm:"size:64" json:"-"`
-	AlipayTradeNo       string     `gorm:"index;size:128" json:"alipay_trade_no"`
-	BuyerLogonID        string     `gorm:"size:128" json:"buyer_logon_id"`
-	PaidAt              *time.Time `gorm:"index" json:"paid_at"`
-	FulfilledAt         *time.Time `json:"fulfilled_at"`
-	EmailSentAt         *time.Time `json:"email_sent_at"`
-	LastError           string     `gorm:"size:512" json:"last_error"`
-	CreatedAt           time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
-	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
-}
 
-type Setting struct {
-	Key       string    `gorm:"primaryKey;size:128" json:"key"`
-	Value     string    `gorm:"type:text" json:"value"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
-}

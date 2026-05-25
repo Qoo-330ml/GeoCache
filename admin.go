@@ -136,8 +136,6 @@ const adminHTML = `<!doctype html>
 	    .header-actions { display: flex; gap: 10px; align-items: center; }
     .filters { display: grid; grid-template-columns: 1fr 150px 150px auto; gap: 12px; align-items: end; }
     .client-filters { display: grid; grid-template-columns: 1fr 130px 130px auto; gap: 12px; align-items: end; }
-    .settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-    .settings-grid .wide { grid-column: 1 / -1; }
     .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
     .stat { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: rgba(255,255,255,.38); }
     .stat-value { font-size: 25px; font-weight: 780; line-height: 1.1; }
@@ -180,9 +178,8 @@ const adminHTML = `<!doctype html>
 	    .note { color: var(--muted); font-size: 12px; margin-top: 3px; }
     @media (max-width: 820px) {
 	      header, .generated { align-items: stretch; flex-direction: column; }
-      .grid, .filters, .settings-grid { grid-template-columns: 1fr; }
+      .grid, .filters { grid-template-columns: 1fr; }
       .client-filters, .stats-grid { grid-template-columns: 1fr; }
-      .settings-grid .wide { grid-column: auto; }
 	      .header-actions { flex-direction: column; align-items: stretch; }
 	      button { width: 100%; }
 	    }
@@ -235,30 +232,6 @@ const adminHTML = `<!doctype html>
           <div class="stat"><div id="statChecks24h" class="stat-value">-</div><div class="stat-label">24小时校验</div></div>
           <div class="stat"><div id="statIPReports" class="stat-value">-</div><div class="stat-label">IP归属地记录</div></div>
         </div>
-      </div>
-    </section>
-
-    <section class="panel">
-      <div class="panel-head"><h2>支付与邮件配置</h2></div>
-      <div class="panel-body">
-        <div class="settings-grid">
-          <div class="wide"><label>公开访问地址</label><input id="publicBaseURL" placeholder="https://license.example.com" /></div>
-          <div><label>7天试用价格</label><input id="priceTrial" placeholder="0.00" /></div>
-          <div><label>年费会员价格</label><input id="priceYearly" placeholder="8.80" /></div>
-          <div><label>永久会员价格</label><input id="pricePermanent" placeholder="18.80" /></div>
-          <div><label>支付宝网关</label><input id="alipayGateway" placeholder="https://openapi.alipay.com/gateway.do" /></div>
-          <div><label>支付宝 AppID</label><input id="alipayAppID" /></div>
-          <div class="wide"><label>应用私钥</label><textarea id="alipayPrivateKey" placeholder="可粘贴 PEM，或去掉头尾的密钥内容"></textarea></div>
-          <div class="wide"><label>支付宝公钥</label><textarea id="alipayPublicKey" placeholder="支付宝开放平台提供的支付宝公钥"></textarea></div>
-          <div><label>SMTP Host</label><input id="smtpHost" placeholder="smtp.example.com" /></div>
-          <div><label>SMTP Port</label><input id="smtpPort" placeholder="587" /></div>
-          <div><label>SMTP User</label><input id="smtpUser" /></div>
-          <div><label>SMTP Password</label><input id="smtpPassword" type="password" /></div>
-          <div class="wide"><label>发件人</label><input id="smtpFrom" placeholder="Qmby License <mailer@example.com>" /></div>
-        </div>
-        <div style="height:12px"></div>
-        <button onclick="saveSettings()">保存配置</button>
-        <div id="settingsMessage" class="msg"></div>
       </div>
     </section>
 
@@ -355,8 +328,7 @@ const adminHTML = `<!doctype html>
 	      try {
 	        await api("/api/admin/codes?limit=1");
 	        showApp();
-	        await loadSettings();
-	        await refreshAll();
+        await refreshAll();
 	      } catch (err) {
 	        localStorage.removeItem("adminPass");
 	        $("adminPass").value = "";
@@ -377,49 +349,7 @@ const adminHTML = `<!doctype html>
 	      if (!res.ok) throw new Error(data.error || res.statusText);
 	      return data;
 	    }
-	    async function loadSettings() {
-	      const data = await api("/api/admin/settings");
-	      $("publicBaseURL").value = data.public_base_url || "";
-	      $("priceTrial").value = data.price_trial_cny || "";
-	      $("priceYearly").value = data.price_yearly_cny || "";
-	      $("pricePermanent").value = data.price_permanent_cny || "";
-	      $("alipayGateway").value = data.alipay_gateway || "";
-	      $("alipayAppID").value = data.alipay_app_id || "";
-	      $("alipayPrivateKey").value = data.alipay_private_key || "";
-	      $("alipayPublicKey").value = data.alipay_public_key || "";
-	      $("smtpHost").value = data.smtp_host || "";
-	      $("smtpPort").value = data.smtp_port || "";
-	      $("smtpUser").value = data.smtp_user || "";
-	      $("smtpPassword").value = data.smtp_password || "";
-	      $("smtpFrom").value = data.smtp_from || "";
-	    }
-	    async function saveSettings() {
-	      $("settingsMessage").textContent = "";
-	      try {
-	        await api("/api/admin/settings", {
-	          method: "PUT",
-	          body: JSON.stringify({
-	            public_base_url: $("publicBaseURL").value,
-	            price_trial_cny: $("priceTrial").value,
-	            price_yearly_cny: $("priceYearly").value,
-	            price_permanent_cny: $("pricePermanent").value,
-	            alipay_gateway: $("alipayGateway").value,
-	            alipay_app_id: $("alipayAppID").value,
-	            alipay_private_key: $("alipayPrivateKey").value,
-	            alipay_public_key: $("alipayPublicKey").value,
-	            smtp_host: $("smtpHost").value,
-	            smtp_port: $("smtpPort").value,
-	            smtp_user: $("smtpUser").value,
-	            smtp_password: $("smtpPassword").value,
-	            smtp_from: $("smtpFrom").value
-	          })
-	        });
-	        $("settingsMessage").textContent = "配置已保存";
-	      } catch (err) {
-	        $("settingsMessage").textContent = err.message;
-	      }
-	    }
-    function fmt(value, permanent) {
+	    function fmt(value, permanent) {
       if (!value) return permanent ? "永久" : "-";
       return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
     }

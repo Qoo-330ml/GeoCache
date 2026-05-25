@@ -43,17 +43,11 @@ func main() {
 
 	r := gin.New()
 	r.Use(gin.Logger(), gin.Recovery())
-	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/buy") })
 	r.GET("/admin", serveAdmin)
-	r.GET("/buy", serveBuy)
-	r.GET("/pay/return", servePayReturn)
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	r.POST("/api/license/verify", a.requireLicenseKey(), a.verifyLicense)
 	r.POST("/api/ip/report", a.requireLicenseKey(), a.reportIP)
 	r.GET("/api/ip/lookup", a.lookupIP)
-	r.GET("/api/public/products", a.listProducts)
-	r.POST("/api/public/orders", a.createPurchaseOrder)
-	r.POST("/api/pay/alipay/notify", a.alipayNotify)
 
 	admin := r.Group("/api/admin")
 	admin.Use(a.basicAuth())
@@ -62,8 +56,6 @@ func main() {
 	admin.POST("/codes/:id/disable", a.disableCode)
 	admin.GET("/stats", a.telemetryStats)
 	admin.GET("/clients", a.listClients)
-	admin.GET("/settings", a.getSettings)
-	admin.PUT("/settings", a.putSettings)
 
 	addr := env("SERVER_ADDR", ":2090")
 	log.Printf("qmby-license-server listening on %s", addr)
