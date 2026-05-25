@@ -173,6 +173,7 @@ func normalizeGeoReport(p geoReportPayload) geoReportPayload {
 	p.District = truncate(strings.TrimSpace(p.District), 128)
 	p.Street = truncate(strings.TrimSpace(p.Street), 256)
 	p.ISP = truncate(strings.TrimSpace(p.ISP), 128)
+	p.Provider = truncate(firstNonEmpty(strings.TrimSpace(p.Provider), "unknown"), 64)
 	p.QmbyVersion = truncate(strings.TrimSpace(p.QmbyVersion), 64)
 	p.BeijingTime = strings.TrimSpace(p.BeijingTime)
 	p.InstanceID = truncate(strings.TrimSpace(p.InstanceID), 128)
@@ -186,6 +187,7 @@ func clientSeenPayload(req licenseVerifyRequest, c *gin.Context) geoReportPayloa
 		InstanceID:  req.InstanceID,
 		Email:       req.Email,
 		QmbyVersion: req.QmbyVersion,
+		Provider:    "license",
 	})
 }
 
@@ -252,6 +254,7 @@ func updateClientGeo(tx *gorm.DB, c *gin.Context, geo geoReportPayload) error {
 		"isp":        geo.ISP,
 		"latitude":   geo.Latitude,
 		"longitude":  geo.Longitude,
+		"provider":   geo.Provider,
 		"updated_at": time.Now().In(beijingLocation()),
 	}
 	if geo.QmbyVersion != "" {
