@@ -1,0 +1,32 @@
+services:
+  qmby-license:
+    build: .
+    container_name: qmby-license
+    restart: unless-stopped
+    ports:
+      - "2090:2090"
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_ADDR=:2090
+      - DB_PATH=/data/license.db
+      - ADMIN_USER=admin
+      - ADMIN_PASSWORD=admin123
+      - PUBLIC_BASE_URL=http://localhost:2090
+      - PRICE_TRIAL_CNY=0.00
+      - PRICE_YEARLY_CNY=8.80
+      - PRICE_PERMANENT_CNY=18.80
+      # 支付宝电脑网站支付配置。正式使用时填写开放平台应用参数。
+      - ALIPAY_GATEWAY=https://openapi.alipay.com/gateway.do
+      - ALIPAY_APP_ID=
+      - ALIPAY_PRIVATE_KEY=
+      - ALIPAY_PUBLIC_KEY=
+      # SMTP 邮件配置。支付成功后用来发送激活码。
+      - SMTP_HOST=
+      - SMTP_PORT=587
+      - SMTP_USER=
+      - SMTP_PASSWORD=
+      - SMTP_FROM=
+      # 可选：设置后，Qmby 调用 /api/license/verify 需要带 Authorization: Bearer <LICENSE_API_KEY>
+      - LICENSE_API_KEY=
+    volumes:
+      - ./data:/data
