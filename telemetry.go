@@ -162,7 +162,6 @@ func (a *app) lookupIP(c *gin.Context) {
 		"isp":        best.ISP,
 		"latitude":   best.Latitude,
 		"longitude":  best.Longitude,
-		"provider":   best.Provider,
 		"count":      best.Count,
 		"updated_at": best.UpdatedAt,
 	})
@@ -174,7 +173,6 @@ func normalizeGeoReport(p geoReportPayload) geoReportPayload {
 	p.District = truncate(strings.TrimSpace(p.District), 128)
 	p.Street = truncate(strings.TrimSpace(p.Street), 256)
 	p.ISP = truncate(strings.TrimSpace(p.ISP), 128)
-	p.Provider = truncate(firstNonEmpty(strings.TrimSpace(p.Provider), "unknown"), 64)
 	p.QmbyVersion = truncate(strings.TrimSpace(p.QmbyVersion), 64)
 	p.BeijingTime = strings.TrimSpace(p.BeijingTime)
 	p.InstanceID = truncate(strings.TrimSpace(p.InstanceID), 128)
@@ -188,7 +186,6 @@ func clientSeenPayload(req licenseVerifyRequest, c *gin.Context) geoReportPayloa
 		InstanceID:  req.InstanceID,
 		Email:       req.Email,
 		QmbyVersion: req.QmbyVersion,
-		Provider:    "license",
 	})
 }
 
@@ -255,7 +252,6 @@ func updateClientGeo(tx *gorm.DB, c *gin.Context, geo geoReportPayload) error {
 		"isp":        geo.ISP,
 		"latitude":   geo.Latitude,
 		"longitude":  geo.Longitude,
-		"provider":   geo.Provider,
 		"updated_at": time.Now().In(beijingLocation()),
 	}
 	if geo.QmbyVersion != "" {
@@ -273,7 +269,6 @@ func createIPReport(tx *gorm.DB, c *gin.Context, geo geoReportPayload) error {
 		ISP:           geo.ISP,
 		Latitude:      geo.Latitude,
 		Longitude:     geo.Longitude,
-		Provider:      geo.Provider,
 		ClientVersion: geo.QmbyVersion,
 		InstanceID:    geo.InstanceID,
 		Email:         geo.Email,
@@ -291,7 +286,6 @@ func upsertIPBest(tx *gorm.DB, geo geoReportPayload) error {
 		ISP:       geo.ISP,
 		Latitude:  geo.Latitude,
 		Longitude: geo.Longitude,
-		Provider:  geo.Provider,
 		Count:     1,
 	}
 	return tx.Clauses(clause.OnConflict{
@@ -303,7 +297,6 @@ func upsertIPBest(tx *gorm.DB, geo geoReportPayload) error {
 			"isp":        best.ISP,
 			"latitude":   best.Latitude,
 			"longitude":  best.Longitude,
-			"provider":   best.Provider,
 			"count":      gorm.Expr("count + 1"),
 			"updated_at": time.Now().In(beijingLocation()),
 		}),
@@ -333,7 +326,7 @@ func (a *app) listIPBests(c *gin.Context) {
 	tx := a.db.Model(&IPBest{})
 	if search := strings.TrimSpace(c.Query("search")); search != "" {
 		like := "%" + strings.ToLower(search) + "%"
-		tx = tx.Where("LOWER(ip) LIKE ? OR LOWER(location) LIKE ? OR LOWER(district) LIKE ? OR LOWER(street) LIKE ? OR LOWER(isp) LIKE ? OR LOWER(provider) LIKE ?", like, like, like, like, like, like)
+		tx = tx.Where("LOWER(ip) LIKE ? OR LOWER(location) LIKE ? OR LOWER(district) LIKE ? OR LOWER(street) LIKE ? OR LOWER(isp) LIKE ?", like, like, like, like, like)
 	}
 
 	var total int64

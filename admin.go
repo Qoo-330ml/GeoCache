@@ -297,13 +297,13 @@ const adminHTML = `<!doctype html>
       <div class="panel-head"><h2>IP归属地数据库</h2></div>
       <div class="panel-body">
         <div class="ip-bests-filters">
-          <div><label>搜索 IP、地址、运营商或来源</label><input id="ipBestSearch" placeholder="IP、地址、运营商或来源" oninput="loadIPBestsDebounced()" /></div>
+          <div><label>搜索 IP、地址或运营商</label><input id="ipBestSearch" placeholder="IP、地址或运营商" oninput="loadIPBestsDebounced()" /></div>
           <button class="secondary" onclick="loadIPBests()">查询</button>
         </div>
         <div style="height:14px"></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>IP</th><th>位置</th><th>区划</th><th>街道</th><th>运营商</th><th>经纬度</th><th>来源</th><th>上报次数</th><th>更新时间</th></tr></thead>
-          <tbody id="ipBestRows"><tr><td colspan="9">加载中...</td></tr></tbody>
+          <thead><tr><th>IP</th><th>位置</th><th>区划</th><th>街道</th><th>运营商</th><th>经纬度</th><th>上报次数</th><th>更新时间</th></tr></thead>
+          <tbody id="ipBestRows"><tr><td colspan="8">加载中...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -512,14 +512,13 @@ const adminHTML = `<!doctype html>
             "<td>" + esc(row.street || "-") + "</td>" +
             "<td>" + esc(row.isp || "-") + "</td>" +
             "<td>" + esc(latlng || "-") + "</td>" +
-            "<td>" + esc(row.provider || "-") + "</td>" +
             "<td>" + (row.count || 0) + "</td>" +
             "<td>" + fmtFull(row.updated_at) + "</td>" +
           "</tr>";
-        }).join("") || "<tr><td colspan=\"9\">暂无IP归属地数据</td></tr>";
+        }).join("") || "<tr><td colspan=\"8\">暂无IP归属地数据</td></tr>";
       } catch (err) {
         if (err.message === "unauthorized") { showLogin(); return; }
-        $("ipBestRows").innerHTML = "<tr><td colspan=\"9\">" + esc(err.message) + "</td></tr>";
+        $("ipBestRows").innerHTML = "<tr><td colspan=\"8\">" + esc(err.message) + "</td></tr>";
       }
     }
     initAuth();
