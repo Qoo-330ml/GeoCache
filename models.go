@@ -52,9 +52,10 @@ type FeaturePolicyPayload struct {
 var defaultFeaturePolicies = []FeaturePolicy{
 	{Key: "account", Label: "号池管理", Access: FeatureAccessFree, Enabled: true, SortOrder: 10},
 	{Key: "strm_task", Label: "Strm 任务", Access: FeatureAccessFree, Enabled: true, SortOrder: 20},
-	{Key: "upload_monitor", Label: "文件监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 30},
-	{Key: "organizer", Label: "识别整理", Access: FeatureAccessMember, Enabled: true, SortOrder: 40},
-	{Key: "playback_monitor", Label: "播放监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 50},
+	{Key: "pt_subscription", Label: "PT 订阅", Access: FeatureAccessMember, Enabled: true, SortOrder: 30},
+	{Key: "upload_monitor", Label: "文件监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 40},
+	{Key: "organizer", Label: "识别整理", Access: FeatureAccessMember, Enabled: true, SortOrder: 50},
+	{Key: "playback_monitor", Label: "播放监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 60},
 }
 
 type ActivationCode struct {
