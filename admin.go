@@ -222,6 +222,7 @@ const adminHTML = `<!doctype html>
 	      </div>
 	      <div class="header-actions">
         <button class="secondary" onclick="toggleIPBests()">IP归属地数据库</button>
+        <button class="secondary" onclick="exportOrganizerFailedRecords()">导出整理失败记录</button>
         <button class="secondary" onclick="refreshAll()">刷新</button>
         <button class="secondary" onclick="logout()">退出登录</button>
       </div>
@@ -579,6 +580,29 @@ const adminHTML = `<!doctype html>
       } catch (err) {
         if (err.message === "unauthorized") { showLogin(); return; }
         $("ipBestRows").innerHTML = "<tr><td colspan=\"8\">" + esc(err.message) + "</td></tr>";
+      }
+    }
+    async function exportOrganizerFailedRecords() {
+      try {
+        const res = await fetch("/api/admin/organizer/failed-records/export", { headers: { Authorization: authHeader() } });
+        if (res.status === 401) {
+          showLogin();
+          return;
+        }
+        if (!res.ok) throw new Error(res.statusText);
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const disposition = res.headers.get("Content-Disposition") || "";
+        const match = disposition.match(/filename="([^"]+)"/);
+        a.href = url;
+        a.download = match ? match[1] : "organizer_failed_records.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        alert(err.message);
       }
     }
     initAuth();

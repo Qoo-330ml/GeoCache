@@ -48,6 +48,7 @@ func main() {
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	r.POST("/api/license/verify", a.requireLicenseKey(), a.verifyLicense)
 	r.POST("/api/ip/report", a.requireLicenseKey(), a.reportIP)
+	r.POST("/api/organizer/failed-records", a.requireLicenseKey(), a.submitOrganizerFailedRecords)
 	r.GET("/api/ip/lookup", a.lookupIP)
 
 	admin := r.Group("/api/admin")
@@ -58,6 +59,7 @@ func main() {
 	admin.GET("/stats", a.telemetryStats)
 	admin.GET("/clients", a.listClients)
 	admin.GET("/ip-bests", a.listIPBests)
+	admin.GET("/organizer/failed-records/export", a.exportOrganizerFailedRecords)
 	admin.GET("/features", a.listFeatures)
 	admin.PUT("/features", a.updateFeatures)
 

@@ -162,3 +162,33 @@ type IPBest struct {
 	Count     int       `gorm:"not null;default:0" json:"count"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+type OrganizerFailedRecordSubmission struct {
+	ID                uint      `gorm:"primaryKey" json:"id"`
+	Email             string    `gorm:"index;size:320;not null" json:"email"`
+	ClientBeijingTime time.Time `gorm:"index" json:"client_beijing_time"`
+	InstanceID        string    `gorm:"index;size:128;not null" json:"instance_id"`
+	QmbyVersion       string    `gorm:"size:64" json:"qmby_version"`
+	RawRecords        string    `gorm:"type:text;not null" json:"raw_records"`
+	RecordCount       int       `gorm:"not null;default:0" json:"record_count"`
+	IP                string    `gorm:"size:64" json:"ip"`
+	UserAgent         string    `gorm:"size:256" json:"user_agent"`
+	CreatedAt         time.Time `gorm:"autoCreateTime;index" json:"created_at"`
+}
+
+type OrganizerFailedRecord struct {
+	ID           uint       `gorm:"primaryKey" json:"id"`
+	SubmissionID uint       `gorm:"index;not null" json:"submission_id"`
+	LineNumber   int        `gorm:"not null" json:"line_number"`
+	Email        string     `gorm:"index;size:320;not null" json:"email"`
+	InstanceID   string     `gorm:"index;size:128;not null" json:"instance_id"`
+	QmbyVersion  string     `gorm:"size:64" json:"qmby_version"`
+	EventTime    *time.Time `gorm:"index" json:"event_time"`
+	Kind         string     `gorm:"index;size:32" json:"kind"`
+	OriginalName string     `gorm:"size:512" json:"original_name"`
+	OriginalPath string     `gorm:"size:1024" json:"original_path"`
+	Message      string     `gorm:"type:text" json:"message"`
+	RawLine      string     `gorm:"type:text;not null" json:"raw_line"`
+	ParseError   string     `gorm:"size:256" json:"parse_error"`
+	CreatedAt    time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
+}
