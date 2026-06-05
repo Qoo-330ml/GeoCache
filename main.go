@@ -1,11 +1,14 @@
 package main
 
 import (
+	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base32"
+	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"log"
 	"net/http"
@@ -24,6 +27,7 @@ type app struct {
 	adminUser     string
 	adminPassword string
 	licenseAPIKey string
+	signingKey    ed25519.PrivateKey
 }
 
 func main() {
@@ -39,6 +43,9 @@ func main() {
 		adminUser:     env("ADMIN_USER", "admin"),
 		adminPassword: env("ADMIN_PASSWORD", "change-me"),
 		licenseAPIKey: strings.TrimSpace(os.Getenv("LICENSE_API_KEY")),
+	}
+	if a.signingKey, err = loadLicenseSigningKey(); err != nil {
+		log.Fatal(err)
 	}
 
 	r := gin.New()
@@ -290,6 +297,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"member": false, "error": "email required"})
 		return
 	}
+	instanceID := strings.TrimSpace(req.InstanceID)
 
 	loc := beijingLocation()
 	serverNow := time.Now().In(loc)
@@ -380,23 +388,90 @@ func (a *app) verifyLicense(c *gin.Context) {
 				}
 				return recordClientSeen(tx, c, req, nil, false, "none", serverNow, clientTime, seen)
 			})
-			c.JSON(http.StatusOK, gin.H{"member": false, "status": "none", "server_beijing_time": serverNow, "features": featurePolicies})
+			license := licensePayload{
+				Email:             email,
+				InstanceID:        instanceID,
+				Member:            false,
+				Level:             "",
+				LevelLabel:        "",
+				Status:            licenseStatus(false, "none"),
+				StartsAt:          nil,
+				ExpiresAt:         nil,
+				ServerBeijingTime: serverNow,
+				Features:          featurePolicies,
+			}
+			a.writeSignedLicense(c, license)
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"member": false, "error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"member":              member,
-		"level":               code.Level,
-		"level_label":         levelDisplayNames[code.Level],
-		"status":              code.Status,
-		"starts_at":           code.StartsAt,
-		"expires_at":          code.ExpiresAt,
-		"server_beijing_time": serverNow,
-		"features":            featurePolicies,
-	})
+	license := licensePayload{
+		Email:             email,
+		InstanceID:        instanceID,
+		Member:            member,
+		Level:             code.Level,
+		LevelLabel:        levelDisplayNames[code.Level],
+		Status:            licenseStatus(member, code.Status),
+		StartsAt:          code.StartsAt,
+		ExpiresAt:         code.ExpiresAt,
+		ServerBeijingTime: serverNow,
+		Features:          featurePolicies,
+	}
+	a.writeSignedLicense(c, license)
+}
+
+type licensePayload struct {
+	Email             string                          `json:"email"`
+	InstanceID        string                          `json:"instance_id"`
+	Member            bool                            `json:"member"`
+	Level             string                          `json:"level"`
+	LevelLabel        string                          `json:"level_label"`
+	Status            string                          `json:"status"`
+	StartsAt          *time.Time                      `json:"starts_at"`
+	ExpiresAt         *time.Time                      `json:"expires_at"`
+	ServerBeijingTime time.Time                       `json:"server_beijing_time"`
+	Features          map[string]FeaturePolicyPayload `json:"features"`
+}
+
+type signedLicenseResponse struct {
+	License   json.RawMessage `json:"license"`
+	Signature string          `json:"signature"`
+}
+
+func (a *app) writeSignedLicense(c *gin.Context, license licensePayload) {
+	response, err := a.signedLicenseResponse(license)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, response)
+}
+
+func (a *app) signedLicenseResponse(license licensePayload) (signedLicenseResponse, error) {
+	if len(a.signingKey) != ed25519.PrivateKeySize {
+		return signedLicenseResponse{}, errors.New("license signing key is not configured")
+	}
+	licenseJSON, err := json.Marshal(license)
+	if err != nil {
+		return signedLicenseResponse{}, err
+	}
+	signature := ed25519.Sign(a.signingKey, licenseJSON)
+	return signedLicenseResponse{
+		License:   json.RawMessage(licenseJSON),
+		Signature: base64.StdEncoding.EncodeToString(signature),
+	}, nil
+}
+
+func licenseStatus(member bool, status string) string {
+	if member {
+		return "ok"
+	}
+	if status == StatusExpired {
+		return StatusExpired
+	}
+	return "inactive"
 }
 
 func (a *app) featurePolicies() ([]FeaturePolicy, error) {
@@ -505,6 +580,28 @@ func beijingLocation() *time.Location {
 		return time.FixedZone("CST", 8*60*60)
 	}
 	return loc
+}
+
+func loadLicenseSigningKey() (ed25519.PrivateKey, error) {
+	value := strings.TrimSpace(os.Getenv("LICENSE_ED25519_PRIVATE_KEY"))
+	if value == "" {
+		value = strings.TrimSpace(os.Getenv("LICENSE_ED25519_PRIVATE_KEY_BASE64"))
+	}
+	if value == "" {
+		return nil, errors.New("LICENSE_ED25519_PRIVATE_KEY is required")
+	}
+	raw, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, errors.New("decode LICENSE_ED25519_PRIVATE_KEY: invalid base64")
+	}
+	switch len(raw) {
+	case ed25519.PrivateKeySize:
+		return ed25519.PrivateKey(raw), nil
+	case ed25519.SeedSize:
+		return ed25519.NewKeyFromSeed(raw), nil
+	default:
+		return nil, errors.New("LICENSE_ED25519_PRIVATE_KEY must decode to 32-byte seed or 64-byte private key")
+	}
 }
 
 func truncate(value string, max int) string {

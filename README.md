@@ -38,9 +38,11 @@ http://localhost:2090/buy
 ```yaml
 ADMIN_USER=admin
 ADMIN_PASSWORD=admin123
+LICENSE_ED25519_PRIVATE_KEY=base64-ed25519-private-key
 ```
 
 请部署前改掉 `ADMIN_PASSWORD`。
+`LICENSE_ED25519_PRIVATE_KEY` 必须从服务端环境变量或密钥管理注入，值为 base64 编码的 Ed25519 64 字节私钥或 32 字节 seed；客户端构建时需要内置对应的 base64 Ed25519 公钥。
 
 ## 支付宝与邮件
 
@@ -91,15 +93,29 @@ Content-Type: application/json
 
 ```json
 {
-  "member": true,
-  "level": "trial",
-  "level_label": "试用会员",
-  "status": "active",
-  "starts_at": "2026-05-21T20:00:00+08:00",
-  "expires_at": "2026-05-28T20:00:00+08:00",
-  "server_beijing_time": "2026-05-21T20:00:00+08:00"
+  "license": {
+    "email": "user@example.com",
+    "instance_id": "qmby-instance-id",
+    "member": true,
+    "level": "trial",
+    "level_label": "试用会员",
+    "status": "ok",
+    "starts_at": "2026-05-21T20:00:00+08:00",
+    "expires_at": "2026-05-28T20:00:00+08:00",
+    "server_beijing_time": "2026-05-21T20:00:00+08:00",
+    "features": {
+      "upload_monitor": {
+        "label": "文件监控",
+        "access": "member",
+        "enabled": true
+      }
+    }
+  },
+  "signature": "base64_ed25519_signature"
 }
 ```
+
+服务端会先稳定序列化 `license` 对象，再用 Ed25519 私钥签名这份 JSON 字节；响应中不会再返回顶层裸 `member` / `features` 作为可信授权依据。客户端需要用内置公钥验签，并检查 `email`、`instance_id`、`starts_at`、`expires_at`。
 
 如果设置了 `LICENSE_API_KEY`，Qmby 请求需要带：
 

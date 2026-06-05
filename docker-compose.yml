@@ -14,5 +14,7 @@ services:
       - ADMIN_PASSWORD=admin123
       # 可选：设置后，Qmby 调用 /api/license/verify 需要带 Authorization: Bearer <LICENSE_API_KEY>
       - LICENSE_API_KEY=
+      # 必填：base64 Ed25519 私钥或 32 字节 seed，用于签名 /api/license/verify 的 license 响应
+      - LICENSE_ED25519_PRIVATE_KEY=
     volumes:
       - ./data:/data
