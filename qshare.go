@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -43,11 +44,11 @@ type qshareResourceIDRequest struct {
 	InstanceID              string `json:"instance_id"`
 	BeijingTime             string `json:"beijing_time"`
 	PublishFolderConfigured bool   `json:"publish_folder_configured"`
-	ResourceID              uint   `json:"resource_id"`
+	ResourceID              any    `json:"resource_id"`
 }
 
 type qshareResourcePayload struct {
-	ID         uint                `json:"id"`
+	ID         any                 `json:"id"`
 	MediaType  string              `json:"media_type"`
 	TMDBID     any                 `json:"tmdb_id"`
 	Title      string              `json:"title"`
@@ -140,7 +141,7 @@ func (a *app) publishQshareResource(c *gin.Context) {
 	resource.Status = qshareStatusPublished
 
 	if err := a.db.Transaction(func(tx *gorm.DB) error {
-		existing, found, err := findExistingQshareResource(tx, identity, resource, req.Resource.ID)
+		existing, found, err := findExistingQshareResource(tx, identity, resource, qsharePayloadUint(req.Resource.ID))
 		if err != nil {
 			return err
 		}
@@ -226,7 +227,12 @@ func (a *app) getQshareResourceDetail(c *gin.Context) {
 		return
 	}
 	var resource QshareResource
-	if err := a.db.Preload("Files").Where("id = ? AND status = ?", req.ResourceID, qshareStatusPublished).First(&resource).Error; err != nil {
+	resourceID := qsharePayloadUint(req.ResourceID)
+	if resourceID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "resource_id required"})
+		return
+	}
+	if err := a.db.Preload("Files").Where("id = ? AND status = ?", resourceID, qshareStatusPublished).First(&resource).Error; err != nil {
 		qshareNotFound(c, err)
 		return
 	}
@@ -247,7 +253,7 @@ func (a *app) deleteQshareResource(c *gin.Context) {
 		return
 	}
 	result := a.db.Model(&QshareResource{}).
-		Where("id = ? AND publisher_email = ? AND instance_id = ? AND status = ?", req.ResourceID, identity.Email, identity.InstanceID, qshareStatusPublished).
+		Where("id = ? AND publisher_email = ? AND instance_id = ? AND status = ?", qsharePayloadUint(req.ResourceID), identity.Email, identity.InstanceID, qshareStatusPublished).
 		Updates(map[string]any{"status": qshareStatusDeleted, "updated_at": time.Now().In(beijingLocation())})
 	if result.Error != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
@@ -448,6 +454,33 @@ func qshareTMDBIDString(value any) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(v))
 	}
+}
+
+func qsharePayloadUint(value any) uint {
+	switch v := value.(type) {
+	case nil:
+		return 0
+	case uint:
+		return v
+	case int:
+		if v > 0 {
+			return uint(v)
+		}
+	case int64:
+		if v > 0 {
+			return uint(v)
+		}
+	case float64:
+		if v > 0 && v == float64(uint64(v)) {
+			return uint(v)
+		}
+	case string:
+		n, err := strconv.ParseUint(strings.TrimSpace(v), 10, 64)
+		if err == nil {
+			return uint(n)
+		}
+	}
+	return 0
 }
 
 func qshareResourceResponseFromModel(resource QshareResource, includeFiles bool) qshareResourceResponse {

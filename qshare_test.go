@@ -132,6 +132,30 @@ func TestQshareListDetailAndDelete(t *testing.T) {
 	}
 }
 
+func TestQshareAcceptsStringIDs(t *testing.T) {
+	a := testQshareApp(t)
+	createActiveQshareLicense(t, a, "owner@example.com")
+	r := testQshareRouter(a)
+
+	body := strings.Replace(sampleQsharePublishBody("owner@example.com", "qmby-owner", 0, "Interstellar"), `"media_type"`, `"id":"","media_type"`, 1)
+	publish := qshareRequest(t, r, "/api/qshare/resources/publish", body)
+	if publish.Code != http.StatusOK {
+		t.Fatalf("publish with string id = %d %s", publish.Code, publish.Body.String())
+	}
+	var published struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(publish.Body.Bytes(), &published); err != nil {
+		t.Fatalf("decode publish: %v", err)
+	}
+
+	detailBody := `{"email":"owner@example.com","instance_id":"qmby-owner","beijing_time":"2026-06-09 17:30:00","publish_folder_configured":true,"resource_id":"` + strconvUint(published.Resource.ID) + `"}`
+	detail := qshareRequest(t, r, "/api/qshare/resources/detail", detailBody)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail with string id = %d %s", detail.Code, detail.Body.String())
+	}
+}
+
 func testQshareApp(t *testing.T) *app {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
