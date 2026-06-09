@@ -13,83 +13,122 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestQshareRequiresContributionBeforeBrowsing(t *testing.T) {
+func TestQshareStatusAndListUsePublishFolderConfigured(t *testing.T) {
 	a := testQshareApp(t)
 	createActiveQshareLicense(t, a, "user@example.com")
 	r := testQshareRouter(a)
 
-	res := qshareRequest(t, r, http.MethodGet, "/api/qshare/resources?email=user@example.com&instance_id=qmby-a", "")
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("list status = %d, body = %s", res.Code, res.Body.String())
+	status := qshareRequest(t, r, "/api/qshare/status", qshareBaseBody("user@example.com", "qmby-a", true))
+	if status.Code != http.StatusOK {
+		t.Fatalf("status code = %d, body = %s", status.Code, status.Body.String())
 	}
-}
-
-func TestQsharePublishListDetailAndAnonymousSource(t *testing.T) {
-	a := testQshareApp(t)
-	createActiveQshareLicense(t, a, "user@example.com")
-	r := testQshareRouter(a)
-
-	publish := qshareRequest(t, r, http.MethodPost, "/api/qshare/resources", sampleQshareBody("user@example.com", "qmby-a", "Interstellar"))
-	if publish.Code != http.StatusOK {
-		t.Fatalf("publish status = %d, body = %s", publish.Code, publish.Body.String())
-	}
-	var published struct {
-		Resource qshareResourceDetail `json:"resource"`
-	}
-	if err := json.Unmarshal(publish.Body.Bytes(), &published); err != nil {
-		t.Fatalf("decode publish: %v", err)
-	}
-	if published.Resource.SourceID == "" || strings.Contains(publish.Body.String(), "user@example.com") || strings.Contains(publish.Body.String(), "qmby-a") {
-		t.Fatalf("publish response leaks publisher identity: %s", publish.Body.String())
+	if !strings.Contains(status.Body.String(), `"enabled":true`) || !strings.Contains(status.Body.String(), `"can_browse":true`) {
+		t.Fatalf("unexpected status response: %s", status.Body.String())
 	}
 
-	list := qshareRequest(t, r, http.MethodGet, "/api/qshare/resources?email=user@example.com&instance_id=qmby-a", "")
+	list := qshareRequest(t, r, "/api/qshare/resources/list", qshareBaseBody("user@example.com", "qmby-a", true))
 	if list.Code != http.StatusOK {
-		t.Fatalf("list status = %d, body = %s", list.Code, list.Body.String())
+		t.Fatalf("list code = %d, body = %s", list.Code, list.Body.String())
 	}
-	if !strings.Contains(list.Body.String(), `"file_count":1`) || strings.Contains(list.Body.String(), "user@example.com") || strings.Contains(list.Body.String(), "qmby-a") {
-		t.Fatalf("list response invalid or leaks identity: %s", list.Body.String())
+	if !strings.Contains(list.Body.String(), `"can_browse":true`) || !strings.Contains(list.Body.String(), `"resources":[]`) {
+		t.Fatalf("configured folder should allow browsing empty qshare: %s", list.Body.String())
 	}
 
-	detail := qshareRequest(t, r, http.MethodGet, "/api/qshare/resources/"+strconvID(published.Resource.ID)+"?email=user@example.com&instance_id=qmby-a", "")
-	if detail.Code != http.StatusOK {
-		t.Fatalf("detail status = %d, body = %s", detail.Code, detail.Body.String())
+	disabled := qshareRequest(t, r, "/api/qshare/resources/list", qshareBaseBody("user@example.com", "qmby-a", false))
+	if disabled.Code != http.StatusOK {
+		t.Fatalf("disabled list code = %d, body = %s", disabled.Code, disabled.Body.String())
 	}
-	if !strings.Contains(detail.Body.String(), `"sha1":"`) || strings.Contains(detail.Body.String(), "user@example.com") || strings.Contains(detail.Body.String(), "qmby-a") {
-		t.Fatalf("detail response invalid or leaks identity: %s", detail.Body.String())
+	if !strings.Contains(disabled.Body.String(), `"can_browse":false`) || !strings.Contains(disabled.Body.String(), `"resources":[]`) {
+		t.Fatalf("list should be disabled without publish folder: %s", disabled.Body.String())
 	}
 }
 
-func TestQshareOnlyOwnerCanUpdateOrCancel(t *testing.T) {
+func TestQsharePublishUpdatesDuplicateAndHidesOwnerIdentity(t *testing.T) {
+	a := testQshareApp(t)
+	createActiveQshareLicense(t, a, "user@example.com")
+	r := testQshareRouter(a)
+
+	first := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBody("user@example.com", "qmby-a", 0, "Original"))
+	if first.Code != http.StatusOK {
+		t.Fatalf("publish code = %d, body = %s", first.Code, first.Body.String())
+	}
+	var firstBody struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatalf("decode first publish: %v", err)
+	}
+	if firstBody.Resource.ID == 0 {
+		t.Fatal("published resource id is empty")
+	}
+
+	second := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBodyWithSource("user@example.com", "qmby-a", 0, "Updated", "115://Movies/RenamedInterstellar"))
+	if second.Code != http.StatusOK {
+		t.Fatalf("republish code = %d, body = %s", second.Code, second.Body.String())
+	}
+	var secondBody struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &secondBody); err != nil {
+		t.Fatalf("decode second publish: %v", err)
+	}
+	if secondBody.Resource.ID != firstBody.Resource.ID || secondBody.Resource.Title != "Updated" {
+		t.Fatalf("duplicate publish did not update original: %+v", secondBody.Resource)
+	}
+	if strings.Contains(second.Body.String(), "user@example.com") || strings.Contains(second.Body.String(), "qmby-a") {
+		t.Fatalf("publish response leaks owner identity: %s", second.Body.String())
+	}
+}
+
+func TestQshareListDetailAndDelete(t *testing.T) {
 	a := testQshareApp(t)
 	createActiveQshareLicense(t, a, "owner@example.com")
 	createActiveQshareLicense(t, a, "other@example.com")
 	r := testQshareRouter(a)
 
-	publish := qshareRequest(t, r, http.MethodPost, "/api/qshare/resources", sampleQshareBody("owner@example.com", "qmby-owner", "Original"))
+	publish := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBody("owner@example.com", "qmby-owner", 0, "Interstellar"))
 	if publish.Code != http.StatusOK {
-		t.Fatalf("publish status = %d, body = %s", publish.Code, publish.Body.String())
+		t.Fatalf("publish code = %d, body = %s", publish.Code, publish.Body.String())
 	}
 	var published struct {
-		Resource qshareResourceDetail `json:"resource"`
+		Resource qshareResourceResponse `json:"resource"`
 	}
 	if err := json.Unmarshal(publish.Body.Bytes(), &published); err != nil {
 		t.Fatalf("decode publish: %v", err)
 	}
 
-	update := qshareRequest(t, r, http.MethodPut, "/api/qshare/resources/"+strconvID(published.Resource.ID), sampleQshareBody("other@example.com", "qmby-other", "Hijack"))
-	if update.Code != http.StatusNotFound {
-		t.Fatalf("other update status = %d, body = %s", update.Code, update.Body.String())
+	list := qshareRequest(t, r, "/api/qshare/resources/list", qshareBaseBody("owner@example.com", "qmby-owner", true))
+	if list.Code != http.StatusOK {
+		t.Fatalf("list code = %d, body = %s", list.Code, list.Body.String())
+	}
+	if !strings.Contains(list.Body.String(), `"can_browse":true`) || strings.Contains(list.Body.String(), `"files"`) {
+		t.Fatalf("list should be poster-wall only: %s", list.Body.String())
+	}
+	if strings.Contains(list.Body.String(), "owner@example.com") || strings.Contains(list.Body.String(), "qmby-owner") {
+		t.Fatalf("list leaks owner identity: %s", list.Body.String())
 	}
 
-	cancel := qshareRequest(t, r, http.MethodDelete, "/api/qshare/resources/"+strconvID(published.Resource.ID)+"?email=other@example.com&instance_id=qmby-other", "")
-	if cancel.Code != http.StatusNotFound {
-		t.Fatalf("other cancel status = %d, body = %s", cancel.Code, cancel.Body.String())
+	blockedDetail := qshareRequest(t, r, "/api/qshare/resources/detail", qshareResourceIDBody("owner@example.com", "qmby-owner", false, published.Resource.ID))
+	if blockedDetail.Code != http.StatusForbidden {
+		t.Fatalf("blocked detail code = %d, body = %s", blockedDetail.Code, blockedDetail.Body.String())
 	}
 
-	cancel = qshareRequest(t, r, http.MethodDelete, "/api/qshare/resources/"+strconvID(published.Resource.ID)+"?email=owner@example.com&instance_id=qmby-owner", "")
-	if cancel.Code != http.StatusOK {
-		t.Fatalf("owner cancel status = %d, body = %s", cancel.Code, cancel.Body.String())
+	detail := qshareRequest(t, r, "/api/qshare/resources/detail", qshareResourceIDBody("owner@example.com", "qmby-owner", true, published.Resource.ID))
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail code = %d, body = %s", detail.Code, detail.Body.String())
+	}
+	if !strings.Contains(detail.Body.String(), `"files":[`) || !strings.Contains(detail.Body.String(), `"sha1":"0123456789ABCDEF0123456789ABCDEF01234567"`) {
+		t.Fatalf("detail missing files: %s", detail.Body.String())
+	}
+
+	otherDelete := qshareRequest(t, r, "/api/qshare/resources/delete", qshareResourceIDBody("other@example.com", "qmby-other", true, published.Resource.ID))
+	if otherDelete.Code != http.StatusNotFound {
+		t.Fatalf("other delete code = %d, body = %s", otherDelete.Code, otherDelete.Body.String())
+	}
+
+	ownerDelete := qshareRequest(t, r, "/api/qshare/resources/delete", qshareResourceIDBody("owner@example.com", "qmby-owner", true, published.Resource.ID))
+	if ownerDelete.Code != http.StatusOK || !strings.Contains(ownerDelete.Body.String(), `"success":true`) {
+		t.Fatalf("owner delete failed: code = %d, body = %s", ownerDelete.Code, ownerDelete.Body.String())
 	}
 }
 
@@ -105,11 +144,11 @@ func testQshareApp(t *testing.T) *app {
 
 func testQshareRouter(a *app) *gin.Engine {
 	r := gin.New()
-	r.GET("/api/qshare/resources", a.requireLicenseKey(), a.listQshareResources)
-	r.GET("/api/qshare/resources/:id", a.requireLicenseKey(), a.getQshareResource)
-	r.POST("/api/qshare/resources", a.requireLicenseKey(), a.publishQshareResource)
-	r.PUT("/api/qshare/resources/:id", a.requireLicenseKey(), a.updateQshareResource)
-	r.DELETE("/api/qshare/resources/:id", a.requireLicenseKey(), a.cancelQshareResource)
+	r.POST("/api/qshare/status", a.requireLicenseKey(), a.qshareStatus)
+	r.POST("/api/qshare/resources/publish", a.requireLicenseKey(), a.publishQshareResource)
+	r.POST("/api/qshare/resources/list", a.requireLicenseKey(), a.listQshareResources)
+	r.POST("/api/qshare/resources/detail", a.requireLicenseKey(), a.getQshareResourceDetail)
+	r.POST("/api/qshare/resources/delete", a.requireLicenseKey(), a.deleteQshareResource)
 	return r
 }
 
@@ -130,33 +169,56 @@ func createActiveQshareLicense(t *testing.T, a *app, email string) {
 	}
 }
 
-func qshareRequest(t *testing.T, r *gin.Engine, method, path, body string) *httptest.ResponseRecorder {
+func qshareRequest(t *testing.T, r *gin.Engine, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
-	req := httptest.NewRequest(method, path, strings.NewReader(body))
-	if body != "" {
-		req.Header.Set("Content-Type", "application/json")
-	}
+	req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test-key")
 	res := httptest.NewRecorder()
 	r.ServeHTTP(res, req)
 	return res
 }
 
-func sampleQshareBody(email, instanceID, title string) string {
+func qshareBaseBody(email, instanceID string, publishFolderConfigured bool) string {
+	return `{"email":"` + email + `","instance_id":"` + instanceID + `","beijing_time":"2026-06-09 17:30:00","publish_folder_configured":` + strconv.FormatBool(publishFolderConfigured) + `}`
+}
+
+func qshareResourceIDBody(email, instanceID string, publishFolderConfigured bool, resourceID uint) string {
+	return `{"email":"` + email + `","instance_id":"` + instanceID + `","beijing_time":"2026-06-09 17:30:00","publish_folder_configured":` + strconv.FormatBool(publishFolderConfigured) + `,"resource_id":` + strconvUint(resourceID) + `}`
+}
+
+func sampleQsharePublishBody(email, instanceID string, resourceID uint, title string) string {
+	return sampleQsharePublishBodyWithSource(email, instanceID, resourceID, title, "115://Movies/Interstellar")
+}
+
+func sampleQsharePublishBodyWithSource(email, instanceID string, resourceID uint, title, sourcePath string) string {
+	idField := ""
+	if resourceID > 0 {
+		idField = `"id":` + strconvUint(resourceID) + `,`
+	}
 	return `{
 		"email": "` + email + `",
 		"instance_id": "` + instanceID + `",
-		"title": "` + title + `",
-		"media_type": "movie",
-		"tmdb_id": "157336",
-		"year": 2014,
-		"poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
-		"files": [{
-			"name": "Interstellar.mkv",
-			"size": 123456789,
-			"sha1": "0123456789abcdef0123456789abcdef01234567",
-			"relative_path": "Interstellar/Interstellar.mkv"
-		}]
+		"beijing_time": "2026-06-09 17:30:00",
+		"publish_folder_configured": true,
+		"resource": {
+			` + idField + `
+			"media_type": "movie",
+			"tmdb_id": 157336,
+			"title": "` + title + `",
+			"year": 2014,
+			"poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
+			"source_path": "` + sourcePath + `",
+			"file_count": 1,
+			"total_size": 123456789,
+			"files": [{
+				"id": "local-file-id",
+				"name": "Interstellar.mkv",
+				"relative_path": "Interstellar/Interstellar.mkv",
+				"size": 123456789,
+				"sha1": "0123456789abcdef0123456789abcdef01234567"
+			}]
+		}
 	}`
 }
 
@@ -164,6 +226,6 @@ func ptrTime(t time.Time) *time.Time {
 	return &t
 }
 
-func strconvID(id uint) string {
+func strconvUint(id uint) string {
 	return strconv.FormatUint(uint64(id), 10)
 }

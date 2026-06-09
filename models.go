@@ -203,6 +203,9 @@ type QshareResource struct {
 	TMDBID         string       `gorm:"index;size:64;not null" json:"tmdb_id"`
 	Year           int          `gorm:"index;not null" json:"year"`
 	PosterURL      string       `gorm:"size:1024;not null" json:"poster_url"`
+	SourcePath     string       `gorm:"size:1024;not null" json:"source_path"`
+	FileCount      int          `gorm:"not null;default:0" json:"file_count"`
+	TotalSize      int64        `gorm:"not null;default:0" json:"total_size"`
 	Status         string       `gorm:"index;size:32;not null;default:published" json:"status"`
 	Files          []QshareFile `gorm:"foreignKey:ResourceID;constraint:OnDelete:CASCADE" json:"files,omitempty"`
 	CreatedAt      time.Time    `gorm:"autoCreateTime;index" json:"created_at"`

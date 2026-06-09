@@ -196,39 +196,61 @@ GET /api/ip/lookup?ip=1.2.3.4
 
 Qshare 使用与 license verify 相同的 `LICENSE_API_KEY` 鉴权头，并继续用 `email + instance_id` 标识 Qmby 实例。云端只保存展示元数据和秒传文件元数据，不保存 115 账号凭据，也不保存 115 分享链接。
 
-接口：
+所有 Qshare 接口都使用 `POST + JSON`：
 
 ```text
-GET    /api/qshare/resources?email=user@example.com&instance_id=qmby-instance-id
-GET    /api/qshare/resources/:id?email=user@example.com&instance_id=qmby-instance-id
-POST   /api/qshare/resources
-PUT    /api/qshare/resources/:id
-DELETE /api/qshare/resources/:id?email=user@example.com&instance_id=qmby-instance-id
+POST /api/qshare/status
+POST /api/qshare/resources/publish
+POST /api/qshare/resources/list
+POST /api/qshare/resources/detail
+POST /api/qshare/resources/delete
 ```
 
-发布 / 更新请求：
+基础身份字段：
 
 ```json
 {
   "email": "user@example.com",
   "instance_id": "qmby-instance-id",
-  "title": "Interstellar",
-  "media_type": "movie",
-  "tmdb_id": "157336",
-  "year": 2014,
-  "poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
-  "files": [
-    {
-      "name": "Interstellar.mkv",
-      "size": 123456789,
-      "sha1": "0123456789abcdef0123456789abcdef01234567",
-      "relative_path": "Interstellar/Interstellar.mkv"
-    }
-  ]
+  "beijing_time": "2026-06-09 17:30:00",
+  "publish_folder_configured": true
 }
 ```
 
-拉取列表和详情前，当前 `email + instance_id` 必须已发布至少一部有效资源。对其他用户展示时，响应只返回匿名 `source_id`，不会返回发布者 email 或 instance_id。
+发布 / 重复发布更新：
+
+```json
+{
+  "email": "user@example.com",
+  "instance_id": "qmby-instance-id",
+  "beijing_time": "2026-06-09 17:30:00",
+  "publish_folder_configured": true,
+  "resource": {
+    "id": 1,
+    "media_type": "movie",
+    "tmdb_id": 157336,
+    "title": "Interstellar",
+    "year": 2014,
+    "poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
+    "source_path": "115://Movies/Interstellar",
+    "file_count": 1,
+    "total_size": 123456789,
+    "files": [
+      {
+        "id": "local-file-id",
+        "name": "Interstellar.mkv",
+        "relative_path": "Interstellar/Interstellar.mkv",
+        "size": 123456789,
+        "sha1": "0123456789abcdef0123456789abcdef01234567"
+      }
+    ]
+  }
+}
+```
+
+删除 / 详情请求在基础身份字段外增加 `resource_id`。浏览共享中心不再要求当前用户已发布资源；只要 `publish_folder_configured=true` 且 license 仍有效，就允许浏览。`publish_folder_configured=false` 时，状态接口返回 `can_browse=false`，列表返回 `can_browse=false` 和空 `resources`，详情接口返回明确错误。
+
+重复发布按同一发布者 `email + instance_id` 内去重：优先使用 `media_type + tmdb_id`；如果 `tmdb_id` 缺失，则使用 `media_type + title + source_path`。对外展示只返回匿名 `owner_label`，不会返回发布者 email 或 instance_id。
 
 ## SQLite 是否够用
 

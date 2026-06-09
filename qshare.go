@@ -4,8 +4,8 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -15,7 +15,7 @@ import (
 
 const (
 	qshareStatusPublished = "published"
-	qshareStatusCanceled  = "canceled"
+	qshareStatusDeleted   = "deleted"
 )
 
 type qshareIdentity struct {
@@ -23,244 +23,266 @@ type qshareIdentity struct {
 	InstanceID string
 }
 
-type qshareResourceRequest struct {
-	Email      string              `json:"email"`
-	InstanceID string              `json:"instance_id"`
-	Title      string              `json:"title"`
+type qshareBaseRequest struct {
+	Email                   string `json:"email"`
+	InstanceID              string `json:"instance_id"`
+	BeijingTime             string `json:"beijing_time"`
+	PublishFolderConfigured bool   `json:"publish_folder_configured"`
+}
+
+type qsharePublishRequest struct {
+	Email                   string                `json:"email"`
+	InstanceID              string                `json:"instance_id"`
+	BeijingTime             string                `json:"beijing_time"`
+	PublishFolderConfigured bool                  `json:"publish_folder_configured"`
+	Resource                qshareResourcePayload `json:"resource"`
+}
+
+type qshareResourceIDRequest struct {
+	Email                   string `json:"email"`
+	InstanceID              string `json:"instance_id"`
+	BeijingTime             string `json:"beijing_time"`
+	PublishFolderConfigured bool   `json:"publish_folder_configured"`
+	ResourceID              uint   `json:"resource_id"`
+}
+
+type qshareResourcePayload struct {
+	ID         uint                `json:"id"`
 	MediaType  string              `json:"media_type"`
-	TMDBID     string              `json:"tmdb_id"`
+	TMDBID     any                 `json:"tmdb_id"`
+	Title      string              `json:"title"`
 	Year       int                 `json:"year"`
 	PosterURL  string              `json:"poster_url"`
-	Files      []qshareFileRequest `json:"files"`
+	SourcePath string              `json:"source_path"`
+	FileCount  int                 `json:"file_count"`
+	TotalSize  int64               `json:"total_size"`
+	Files      []qshareFilePayload `json:"files"`
 }
 
-type qshareFileRequest struct {
+type qshareFilePayload struct {
+	ID            any    `json:"id"`
 	Name          string `json:"name"`
+	RelativePath  string `json:"relative_path"`
 	Size          int64  `json:"size"`
 	SHA1          string `json:"sha1"`
+	SeasonNumber  *int   `json:"season_number,omitempty"`
+	EpisodeNumber *int   `json:"episode_number,omitempty"`
+}
+
+type qshareResourceResponse struct {
+	ID         uint                 `json:"id"`
+	OwnerLabel string               `json:"owner_label"`
+	MediaType  string               `json:"media_type"`
+	TMDBID     string               `json:"tmdb_id"`
+	Title      string               `json:"title"`
+	Year       int                  `json:"year"`
+	PosterURL  string               `json:"poster_url"`
+	SourcePath string               `json:"source_path"`
+	FileCount  int                  `json:"file_count"`
+	TotalSize  int64                `json:"total_size"`
+	Files      []qshareFileResponse `json:"files,omitempty"`
+	CreatedAt  time.Time            `json:"created_at"`
+	UpdatedAt  time.Time            `json:"updated_at"`
+}
+
+type qshareFileResponse struct {
+	ID            uint   `json:"id"`
+	Name          string `json:"name"`
 	RelativePath  string `json:"relative_path"`
-	SeasonNumber  *int   `json:"season_number"`
-	EpisodeNumber *int   `json:"episode_number"`
+	Size          int64  `json:"size"`
+	SHA1          string `json:"sha1"`
+	SeasonNumber  *int   `json:"season_number,omitempty"`
+	EpisodeNumber *int   `json:"episode_number,omitempty"`
 }
 
-type qshareResourceSummary struct {
-	ID        uint      `json:"id"`
-	SourceID  string    `json:"source_id"`
-	Title     string    `json:"title"`
-	MediaType string    `json:"media_type"`
-	TMDBID    string    `json:"tmdb_id"`
-	Year      int       `json:"year"`
-	PosterURL string    `json:"poster_url"`
-	FileCount int       `json:"file_count"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
-
-type qshareResourceDetail struct {
-	qshareResourceSummary
-	Files []QshareFile `json:"files"`
-}
-
-func (a *app) listQshareResources(c *gin.Context) {
-	identity, ok := a.qshareIdentityFromQuery(c)
+func (a *app) qshareStatus(c *gin.Context) {
+	var req qshareBaseRequest
+	if !qshareBindJSON(c, &req) {
+		return
+	}
+	identity, ok := qshareIdentityFromFields(c, req.Email, req.InstanceID, req.BeijingTime)
 	if !ok {
 		return
 	}
-	if !a.requireQshareMember(c, identity) || !a.requireQshareContributor(c, identity) {
-		return
-	}
-
-	limit := parsePositiveInt(c.DefaultQuery("limit", "50"), 50, 100)
-	offset := parsePositiveInt(c.DefaultQuery("offset", "0"), 0, 1000000)
-	tx := a.db.Model(&QshareResource{}).Where("status = ?", qshareStatusPublished)
-	if mediaType := strings.TrimSpace(c.Query("media_type")); mediaType != "" {
-		tx = tx.Where("media_type = ?", truncate(mediaType, 32))
-	}
-	if tmdbID := strings.TrimSpace(c.Query("tmdb_id")); tmdbID != "" {
-		tx = tx.Where("tmdb_id = ?", truncate(tmdbID, 64))
-	}
-
-	var total int64
-	if err := tx.Count(&total).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	var resources []QshareResource
-	if err := tx.Order("updated_at DESC, id DESC").Limit(limit).Offset(offset).Find(&resources).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	summaries, err := a.qshareSummaries(resources)
+	enabled, err := a.activeQshareMember(identity.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"resources": summaries, "total": total})
-}
-
-func (a *app) getQshareResource(c *gin.Context) {
-	identity, ok := a.qshareIdentityFromQuery(c)
-	if !ok {
+	sharedCount, resourceCount, err := a.qshareCounts(identity)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if !a.requireQshareMember(c, identity) || !a.requireQshareContributor(c, identity) {
-		return
-	}
-
-	resource, ok := a.loadPublishedQshareResource(c)
-	if !ok {
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"resource": qshareDetail(resource)})
+	c.JSON(http.StatusOK, gin.H{
+		"enabled":        enabled,
+		"can_browse":     enabled && req.PublishFolderConfigured,
+		"shared_count":   sharedCount,
+		"resource_count": resourceCount,
+	})
 }
 
 func (a *app) publishQshareResource(c *gin.Context) {
-	var req qshareResourceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "bad request"})
+	var req qsharePublishRequest
+	if !qshareBindJSON(c, &req) {
 		return
 	}
-	identity, ok := qshareIdentityFromRequest(c, req)
+	identity, ok := qshareIdentityFromFields(c, req.Email, req.InstanceID, req.BeijingTime)
 	if !ok || !a.requireQshareMember(c, identity) {
 		return
 	}
-	resource, files, ok := normalizeQshareResourceRequest(c, req)
+	resource, files, ok := normalizeQshareResourcePayload(c, req.Resource)
 	if !ok {
 		return
 	}
 	resource.PublisherEmail = identity.Email
 	resource.InstanceID = identity.InstanceID
-	resource.SourceID = qshareSourceID(identity.Email, identity.InstanceID)
 	resource.Status = qshareStatusPublished
 
 	if err := a.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&resource).Error; err != nil {
+		existing, found, err := findExistingQshareResource(tx, identity, resource, req.Resource.ID)
+		if err != nil {
+			return err
+		}
+		if found {
+			resource.ID = existing.ID
+			resource.CreatedAt = existing.CreatedAt
+			if err := tx.Model(&existing).Updates(map[string]any{
+				"media_type":  resource.MediaType,
+				"tmdb_id":     resource.TMDBID,
+				"title":       resource.Title,
+				"year":        resource.Year,
+				"poster_url":  resource.PosterURL,
+				"source_path": resource.SourcePath,
+				"file_count":  resource.FileCount,
+				"total_size":  resource.TotalSize,
+				"status":      qshareStatusPublished,
+				"updated_at":  time.Now().In(beijingLocation()),
+			}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("resource_id = ?", existing.ID).Delete(&QshareFile{}).Error; err != nil {
+				return err
+			}
+		} else if err := tx.Create(&resource).Error; err != nil {
 			return err
 		}
 		for i := range files {
 			files[i].ResourceID = resource.ID
 		}
-		return tx.Create(&files).Error
-	}); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
-		return
-	}
-	resource.Files = files
-	c.JSON(http.StatusOK, gin.H{"success": true, "resource": qshareDetail(resource)})
-}
-
-func (a *app) updateQshareResource(c *gin.Context) {
-	var req qshareResourceRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "bad request"})
-		return
-	}
-	identity, ok := qshareIdentityFromRequest(c, req)
-	if !ok || !a.requireQshareMember(c, identity) {
-		return
-	}
-	resource, files, ok := normalizeQshareResourceRequest(c, req)
-	if !ok {
-		return
-	}
-
-	id, ok := qshareResourceID(c)
-	if !ok {
-		return
-	}
-	if err := a.db.Transaction(func(tx *gorm.DB) error {
-		var existing QshareResource
-		if err := tx.Where("id = ? AND publisher_email = ? AND instance_id = ? AND status = ?", id, identity.Email, identity.InstanceID, qshareStatusPublished).First(&existing).Error; err != nil {
-			return err
-		}
-		updates := map[string]any{
-			"title":      resource.Title,
-			"media_type": resource.MediaType,
-			"tmdb_id":    resource.TMDBID,
-			"year":       resource.Year,
-			"poster_url": resource.PosterURL,
-			"updated_at": time.Now().In(beijingLocation()),
-		}
-		if err := tx.Model(&existing).Updates(updates).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("resource_id = ?", existing.ID).Delete(&QshareFile{}).Error; err != nil {
-			return err
-		}
-		for i := range files {
-			files[i].ResourceID = existing.ID
-		}
 		if err := tx.Create(&files).Error; err != nil {
 			return err
 		}
-		resource = existing
-		return tx.Preload("Files").First(&resource, existing.ID).Error
+		return tx.Preload("Files").First(&resource, resource.ID).Error
 	}); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "resource not found"})
-			return
-		}
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "resource": qshareDetail(resource)})
+	c.JSON(http.StatusOK, gin.H{"resource": qshareResourceResponseFromModel(resource, true)})
 }
 
-func (a *app) cancelQshareResource(c *gin.Context) {
-	identity, ok := a.qshareIdentityFromQuery(c)
+func (a *app) listQshareResources(c *gin.Context) {
+	var req qshareBaseRequest
+	if !qshareBindJSON(c, &req) {
+		return
+	}
+	identity, ok := qshareIdentityFromFields(c, req.Email, req.InstanceID, req.BeijingTime)
 	if !ok {
 		return
 	}
-	if !a.requireQshareMember(c, identity) {
+	enabled, err := a.activeQshareMember(identity.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	id, ok := qshareResourceID(c)
-	if !ok {
+	if !enabled || !req.PublishFolderConfigured {
+		c.JSON(http.StatusOK, gin.H{"can_browse": false, "resources": []qshareResourceResponse{}})
+		return
+	}
+
+	var resources []QshareResource
+	if err := a.db.Where("status = ?", qshareStatusPublished).Order("updated_at DESC, id DESC").Find(&resources).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	response := make([]qshareResourceResponse, 0, len(resources))
+	for _, resource := range resources {
+		response = append(response, qshareResourceResponseFromModel(resource, false))
+	}
+	c.JSON(http.StatusOK, gin.H{"can_browse": true, "resources": response})
+}
+
+func (a *app) getQshareResourceDetail(c *gin.Context) {
+	var req qshareResourceIDRequest
+	if !qshareBindJSON(c, &req) {
+		return
+	}
+	identity, ok := qshareIdentityFromFields(c, req.Email, req.InstanceID, req.BeijingTime)
+	if !ok || !a.requireQshareMember(c, identity) || !requireQsharePublishFolder(c, req.PublishFolderConfigured) {
+		return
+	}
+	if req.ResourceID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "resource_id required"})
+		return
+	}
+	var resource QshareResource
+	if err := a.db.Preload("Files").Where("id = ? AND status = ?", req.ResourceID, qshareStatusPublished).First(&resource).Error; err != nil {
+		qshareNotFound(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"resource": qshareResourceResponseFromModel(resource, true)})
+}
+
+func (a *app) deleteQshareResource(c *gin.Context) {
+	var req qshareResourceIDRequest
+	if !qshareBindJSON(c, &req) {
+		return
+	}
+	identity, ok := qshareIdentityFromFields(c, req.Email, req.InstanceID, req.BeijingTime)
+	if !ok || !a.requireQshareMember(c, identity) {
+		return
+	}
+	if req.ResourceID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "resource_id required"})
 		return
 	}
 	result := a.db.Model(&QshareResource{}).
-		Where("id = ? AND publisher_email = ? AND instance_id = ? AND status = ?", id, identity.Email, identity.InstanceID, qshareStatusPublished).
-		Updates(map[string]any{"status": qshareStatusCanceled, "updated_at": time.Now().In(beijingLocation())})
+		Where("id = ? AND publisher_email = ? AND instance_id = ? AND status = ?", req.ResourceID, identity.Email, identity.InstanceID, qshareStatusPublished).
+		Updates(map[string]any{"status": qshareStatusDeleted, "updated_at": time.Now().In(beijingLocation())})
 	if result.Error != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": result.Error.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
 		return
 	}
 	if result.RowsAffected == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "resource not found"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
 }
 
-func (a *app) qshareIdentityFromQuery(c *gin.Context) (qshareIdentity, bool) {
-	identity := qshareIdentity{
-		Email:      normalizeEmail(c.Query("email")),
-		InstanceID: truncate(strings.TrimSpace(c.Query("instance_id")), 128),
+func qshareBindJSON(c *gin.Context, req any) bool {
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return false
 	}
-	if !validEmail(identity.Email) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid email"})
-		return identity, false
-	}
-	if identity.InstanceID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "instance_id required"})
-		return identity, false
-	}
-	return identity, true
+	return true
 }
 
-func qshareIdentityFromRequest(c *gin.Context, req qshareResourceRequest) (qshareIdentity, bool) {
+func qshareIdentityFromFields(c *gin.Context, email, instanceID, beijingTime string) (qshareIdentity, bool) {
 	identity := qshareIdentity{
-		Email:      normalizeEmail(req.Email),
-		InstanceID: truncate(strings.TrimSpace(req.InstanceID), 128),
+		Email:      normalizeEmail(email),
+		InstanceID: truncate(strings.TrimSpace(instanceID), 128),
 	}
 	if !validEmail(identity.Email) {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid email"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email"})
 		return identity, false
 	}
 	if identity.InstanceID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "instance_id required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "instance_id required"})
+		return identity, false
+	}
+	if parseBeijingTime(beijingTime, beijingLocation()).IsZero() {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid beijing_time"})
 		return identity, false
 	}
 	return identity, true
@@ -269,11 +291,11 @@ func qshareIdentityFromRequest(c *gin.Context, req qshareResourceRequest) (qshar
 func (a *app) requireQshareMember(c *gin.Context, identity qshareIdentity) bool {
 	member, err := a.activeQshareMember(identity.Email)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return false
 	}
 	if !member {
-		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "active license required"})
+		c.JSON(http.StatusForbidden, gin.H{"error": "active license required"})
 		return false
 	}
 	return true
@@ -296,156 +318,179 @@ func (a *app) activeQshareMember(email string) (bool, error) {
 	return true, nil
 }
 
-func (a *app) requireQshareContributor(c *gin.Context, identity qshareIdentity) bool {
-	var count int64
-	err := a.db.Model(&QshareResource{}).
-		Joins("JOIN qshare_files ON qshare_files.resource_id = qshare_resources.id").
-		Where("qshare_resources.publisher_email = ? AND qshare_resources.instance_id = ? AND qshare_resources.status = ?", identity.Email, identity.InstanceID, qshareStatusPublished).
-		Group("qshare_resources.id").
-		Count(&count).Error
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
-		return false
+func (a *app) qshareCounts(identity qshareIdentity) (int64, int64, error) {
+	var sharedCount int64
+	if err := a.db.Model(&QshareResource{}).
+		Where("publisher_email = ? AND instance_id = ? AND status = ? AND file_count > 0", identity.Email, identity.InstanceID, qshareStatusPublished).
+		Count(&sharedCount).Error; err != nil {
+		return 0, 0, err
 	}
-	if count == 0 {
-		c.JSON(http.StatusForbidden, gin.H{"success": false, "error": "publish one valid resource before browsing qshare"})
-		return false
+	var resourceCount int64
+	if err := a.db.Model(&QshareResource{}).Where("status = ?", qshareStatusPublished).Count(&resourceCount).Error; err != nil {
+		return 0, 0, err
 	}
-	return true
+	return sharedCount, resourceCount, nil
 }
 
-func normalizeQshareResourceRequest(c *gin.Context, req qshareResourceRequest) (QshareResource, []QshareFile, bool) {
-	resource := QshareResource{
-		Title:     truncate(strings.TrimSpace(req.Title), 256),
-		MediaType: truncate(strings.TrimSpace(req.MediaType), 32),
-		TMDBID:    truncate(strings.TrimSpace(req.TMDBID), 64),
-		Year:      req.Year,
-		PosterURL: truncate(strings.TrimSpace(req.PosterURL), 1024),
+func requireQsharePublishFolder(c *gin.Context, configured bool) bool {
+	if configured {
+		return true
 	}
-	if resource.Title == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "title required"})
-		return resource, nil, false
+	c.JSON(http.StatusForbidden, gin.H{"error": "publish_folder_configured required"})
+	return false
+}
+
+func normalizeQshareResourcePayload(c *gin.Context, payload qshareResourcePayload) (QshareResource, []QshareFile, bool) {
+	resource := QshareResource{
+		MediaType:  truncate(strings.TrimSpace(payload.MediaType), 32),
+		TMDBID:     truncate(qshareTMDBIDString(payload.TMDBID), 64),
+		Title:      truncate(strings.TrimSpace(payload.Title), 256),
+		Year:       payload.Year,
+		PosterURL:  truncate(strings.TrimSpace(payload.PosterURL), 1024),
+		SourcePath: truncate(strings.TrimSpace(payload.SourcePath), 1024),
+		FileCount:  payload.FileCount,
+		TotalSize:  payload.TotalSize,
 	}
 	if resource.MediaType == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "media_type required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "media_type required"})
 		return resource, nil, false
 	}
-	if resource.TMDBID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "tmdb_id required"})
+	if resource.Title == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "title required"})
 		return resource, nil, false
 	}
 	if resource.Year <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "year required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "year required"})
 		return resource, nil, false
 	}
 	if resource.PosterURL == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "poster_url required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "poster_url required"})
 		return resource, nil, false
 	}
-	files := make([]QshareFile, 0, len(req.Files))
-	for _, item := range req.Files {
+	if resource.SourcePath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "source_path required"})
+		return resource, nil, false
+	}
+
+	files := make([]QshareFile, 0, len(payload.Files))
+	var totalSize int64
+	for _, item := range payload.Files {
 		file := QshareFile{
 			Name:          truncate(strings.TrimSpace(item.Name), 512),
-			Size:          item.Size,
-			SHA1:          strings.ToLower(truncate(strings.TrimSpace(item.SHA1), 40)),
 			RelativePath:  truncate(strings.TrimSpace(item.RelativePath), 1024),
+			Size:          item.Size,
+			SHA1:          strings.ToUpper(truncate(strings.TrimSpace(item.SHA1), 40)),
 			SeasonNumber:  item.SeasonNumber,
 			EpisodeNumber: item.EpisodeNumber,
 		}
 		if file.Name == "" || file.Size <= 0 || file.SHA1 == "" || file.RelativePath == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid file metadata"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file metadata"})
 			return resource, nil, false
 		}
+		totalSize += file.Size
 		files = append(files, file)
 	}
 	if len(files) == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "files required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "files required"})
+		return resource, nil, false
+	}
+	if resource.FileCount <= 0 {
+		resource.FileCount = len(files)
+	}
+	if resource.TotalSize <= 0 {
+		resource.TotalSize = totalSize
+	}
+	if resource.FileCount != len(files) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "file_count mismatch"})
 		return resource, nil, false
 	}
 	return resource, files, true
 }
 
-func (a *app) loadPublishedQshareResource(c *gin.Context) (QshareResource, bool) {
-	id, ok := qshareResourceID(c)
-	if !ok {
-		return QshareResource{}, false
-	}
-	var resource QshareResource
-	if err := a.db.Preload("Files").Where("id = ? AND status = ?", id, qshareStatusPublished).First(&resource).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"success": false, "error": "resource not found"})
-			return resource, false
+func findExistingQshareResource(tx *gorm.DB, identity qshareIdentity, resource QshareResource, id uint) (QshareResource, bool, error) {
+	var existing QshareResource
+	if id > 0 {
+		err := tx.Where("id = ? AND publisher_email = ? AND instance_id = ?", id, identity.Email, identity.InstanceID).First(&existing).Error
+		if err == nil {
+			return existing, true, nil
 		}
-		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
-		return resource, false
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return existing, false, err
+		}
 	}
-	return resource, true
+	tx = tx.Where("publisher_email = ? AND instance_id = ? AND media_type = ?", identity.Email, identity.InstanceID, resource.MediaType)
+	if resource.TMDBID != "" {
+		tx = tx.Where("tmdb_id = ?", resource.TMDBID)
+	} else {
+		tx = tx.Where("title = ? AND source_path = ?", resource.Title, resource.SourcePath)
+	}
+	err := tx.First(&existing).Error
+	if err == nil {
+		return existing, true, nil
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return existing, false, nil
+	}
+	return existing, false, err
 }
 
-func qshareResourceID(c *gin.Context) (uint, bool) {
-	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
-	if err != nil || id == 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "invalid resource id"})
-		return 0, false
-	}
-	return uint(id), true
-}
-
-func (a *app) qshareSummaries(resources []QshareResource) ([]qshareResourceSummary, error) {
-	summaries := make([]qshareResourceSummary, 0, len(resources))
-	if len(resources) == 0 {
-		return summaries, nil
-	}
-	ids := make([]uint, 0, len(resources))
-	for _, resource := range resources {
-		ids = append(ids, resource.ID)
-	}
-	var counts []struct {
-		ResourceID uint
-		Count      int
-	}
-	if err := a.db.Model(&QshareFile{}).
-		Select("resource_id, COUNT(*) AS count").
-		Where("resource_id IN ?", ids).
-		Group("resource_id").
-		Find(&counts).Error; err != nil {
-		return nil, err
-	}
-	countMap := make(map[uint]int, len(counts))
-	for _, count := range counts {
-		countMap[count.ResourceID] = count.Count
-	}
-	for _, resource := range resources {
-		summary := qshareSummary(resource)
-		summary.FileCount = countMap[resource.ID]
-		summaries = append(summaries, summary)
-	}
-	return summaries, nil
-}
-
-func qshareDetail(resource QshareResource) qshareResourceDetail {
-	return qshareResourceDetail{
-		qshareResourceSummary: qshareSummary(resource),
-		Files:                 resource.Files,
+func qshareTMDBIDString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(v)
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%d", int64(v))
+		}
+		return strings.TrimSpace(fmt.Sprint(v))
+	default:
+		return strings.TrimSpace(fmt.Sprint(v))
 	}
 }
 
-func qshareSummary(resource QshareResource) qshareResourceSummary {
-	return qshareResourceSummary{
-		ID:        resource.ID,
-		SourceID:  resource.SourceID,
-		Title:     resource.Title,
-		MediaType: resource.MediaType,
-		TMDBID:    resource.TMDBID,
-		Year:      resource.Year,
-		PosterURL: resource.PosterURL,
-		FileCount: len(resource.Files),
-		CreatedAt: resource.CreatedAt,
-		UpdatedAt: resource.UpdatedAt,
+func qshareResourceResponseFromModel(resource QshareResource, includeFiles bool) qshareResourceResponse {
+	response := qshareResourceResponse{
+		ID:         resource.ID,
+		OwnerLabel: qshareOwnerLabel(resource.PublisherEmail, resource.InstanceID),
+		MediaType:  resource.MediaType,
+		TMDBID:     resource.TMDBID,
+		Title:      resource.Title,
+		Year:       resource.Year,
+		PosterURL:  resource.PosterURL,
+		SourcePath: resource.SourcePath,
+		FileCount:  resource.FileCount,
+		TotalSize:  resource.TotalSize,
+		CreatedAt:  resource.CreatedAt,
+		UpdatedAt:  resource.UpdatedAt,
 	}
+	if includeFiles {
+		response.Files = make([]qshareFileResponse, 0, len(resource.Files))
+		for _, file := range resource.Files {
+			response.Files = append(response.Files, qshareFileResponse{
+				ID:            file.ID,
+				Name:          file.Name,
+				RelativePath:  file.RelativePath,
+				Size:          file.Size,
+				SHA1:          file.SHA1,
+				SeasonNumber:  file.SeasonNumber,
+				EpisodeNumber: file.EpisodeNumber,
+			})
+		}
+	}
+	return response
 }
 
-func qshareSourceID(email, instanceID string) string {
+func qshareOwnerLabel(email, instanceID string) string {
 	sum := sha256.Sum256([]byte(normalizeEmail(email) + "|" + strings.TrimSpace(instanceID)))
-	return "source_" + hex.EncodeToString(sum[:])[:12]
+	return "Qshare-" + strings.ToUpper(hex.EncodeToString(sum[:])[:8])
+}
+
+func qshareNotFound(c *gin.Context, err error) {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "resource not found"})
+		return
+	}
+	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }
