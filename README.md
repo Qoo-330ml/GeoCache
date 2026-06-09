@@ -192,6 +192,44 @@ GET /api/ip/lookup?ip=1.2.3.4
 }
 ```
 
+## Qshare 共享中心接口
+
+Qshare 使用与 license verify 相同的 `LICENSE_API_KEY` 鉴权头，并继续用 `email + instance_id` 标识 Qmby 实例。云端只保存展示元数据和秒传文件元数据，不保存 115 账号凭据，也不保存 115 分享链接。
+
+接口：
+
+```text
+GET    /api/qshare/resources?email=user@example.com&instance_id=qmby-instance-id
+GET    /api/qshare/resources/:id?email=user@example.com&instance_id=qmby-instance-id
+POST   /api/qshare/resources
+PUT    /api/qshare/resources/:id
+DELETE /api/qshare/resources/:id?email=user@example.com&instance_id=qmby-instance-id
+```
+
+发布 / 更新请求：
+
+```json
+{
+  "email": "user@example.com",
+  "instance_id": "qmby-instance-id",
+  "title": "Interstellar",
+  "media_type": "movie",
+  "tmdb_id": "157336",
+  "year": 2014,
+  "poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
+  "files": [
+    {
+      "name": "Interstellar.mkv",
+      "size": 123456789,
+      "sha1": "0123456789abcdef0123456789abcdef01234567",
+      "relative_path": "Interstellar/Interstellar.mkv"
+    }
+  ]
+}
+```
+
+拉取列表和详情前，当前 `email + instance_id` 必须已发布至少一部有效资源。对其他用户展示时，响应只返回匿名 `source_id`，不会返回发布者 email 或 instance_id。
+
 ## SQLite 是否够用
 
 够用，前提是这个授权服务是单容器 / 单实例部署。当前配置启用了 WAL、`busy_timeout`，并限制单连接写入，适合管理员低频生成激活码、Qmby 实例低到中等频率校验。

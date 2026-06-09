@@ -56,6 +56,11 @@ func main() {
 	r.POST("/api/license/verify", a.requireLicenseKey(), a.verifyLicense)
 	r.POST("/api/ip/report", a.requireLicenseKey(), a.reportIP)
 	r.POST("/api/organizer/failed-records", a.requireLicenseKey(), a.submitOrganizerFailedRecords)
+	r.GET("/api/qshare/resources", a.requireLicenseKey(), a.listQshareResources)
+	r.GET("/api/qshare/resources/:id", a.requireLicenseKey(), a.getQshareResource)
+	r.POST("/api/qshare/resources", a.requireLicenseKey(), a.publishQshareResource)
+	r.PUT("/api/qshare/resources/:id", a.requireLicenseKey(), a.updateQshareResource)
+	r.DELETE("/api/qshare/resources/:id", a.requireLicenseKey(), a.cancelQshareResource)
 	r.GET("/api/ip/lookup", a.lookupIP)
 
 	admin := r.Group("/api/admin")

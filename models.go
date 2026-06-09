@@ -192,3 +192,31 @@ type OrganizerFailedRecord struct {
 	ParseError   string     `gorm:"size:256" json:"parse_error"`
 	CreatedAt    time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
 }
+
+type QshareResource struct {
+	ID             uint         `gorm:"primaryKey" json:"id"`
+	PublisherEmail string       `gorm:"index;size:320;not null" json:"-"`
+	InstanceID     string       `gorm:"index;size:128;not null" json:"-"`
+	SourceID       string       `gorm:"index;size:32;not null" json:"source_id"`
+	Title          string       `gorm:"size:256;not null" json:"title"`
+	MediaType      string       `gorm:"index;size:32;not null" json:"media_type"`
+	TMDBID         string       `gorm:"index;size:64;not null" json:"tmdb_id"`
+	Year           int          `gorm:"index;not null" json:"year"`
+	PosterURL      string       `gorm:"size:1024;not null" json:"poster_url"`
+	Status         string       `gorm:"index;size:32;not null;default:published" json:"status"`
+	Files          []QshareFile `gorm:"foreignKey:ResourceID;constraint:OnDelete:CASCADE" json:"files,omitempty"`
+	CreatedAt      time.Time    `gorm:"autoCreateTime;index" json:"created_at"`
+	UpdatedAt      time.Time    `gorm:"autoUpdateTime;index" json:"updated_at"`
+}
+
+type QshareFile struct {
+	ID            uint      `gorm:"primaryKey" json:"id"`
+	ResourceID    uint      `gorm:"index;not null" json:"-"`
+	Name          string    `gorm:"size:512;not null" json:"name"`
+	Size          int64     `gorm:"not null" json:"size"`
+	SHA1          string    `gorm:"index;size:40;not null" json:"sha1"`
+	RelativePath  string    `gorm:"size:1024;not null" json:"relative_path"`
+	SeasonNumber  *int      `json:"season_number,omitempty"`
+	EpisodeNumber *int      `json:"episode_number,omitempty"`
+	CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
