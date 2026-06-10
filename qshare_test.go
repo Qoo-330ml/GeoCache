@@ -211,7 +211,16 @@ func TestQshareAcceptsFolderFileItem(t *testing.T) {
 				"publisher_115_id": "4577361",
 				"season_number": 1,
 				"chat_mid": "mid-season-1",
-				"chat_contact_id": "1182480"
+				"chat_contact_id": "1182480",
+				"children": [{
+					"name": "灵魂摆渡·十年.S01E01.2160p.WEB-DL.HDR10+.HEVC.mkv",
+					"relative_path": "Season 1/灵魂摆渡·十年.S01E01.2160p.WEB-DL.HDR10+.HEVC.mkv",
+					"quality": "2160p WEB-DL HDR10+ HEVC",
+					"size": 123,
+					"sha1": "ABC",
+					"season_number": 1,
+					"episode_number": 1
+				}]
 			}]
 		}
 	}`
@@ -230,6 +239,9 @@ func TestQshareAcceptsFolderFileItem(t *testing.T) {
 	}
 	if published.Resource.Files[0].Quality != "S01 24集 · 2160p WEB-DL HDR10+ HEVC" {
 		t.Fatalf("quality = %q", published.Resource.Files[0].Quality)
+	}
+	if len(published.Resource.Files[0].Children) != 1 || published.Resource.Files[0].Children[0].Quality != "2160p WEB-DL HDR10+ HEVC" {
+		t.Fatalf("children = %+v", published.Resource.Files[0].Children)
 	}
 	if published.Resource.SourcePath != "" {
 		t.Fatalf("source path should not be returned: %q", published.Resource.SourcePath)

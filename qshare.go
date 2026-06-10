@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -106,18 +107,19 @@ type qshareResourcePayload struct {
 }
 
 type qshareFilePayload struct {
-	ID             any    `json:"id"`
-	Name           string `json:"name"`
-	RelativePath   string `json:"relative_path"`
-	Quality        string `json:"quality"`
-	Size           int64  `json:"size"`
-	SHA1           string `json:"sha1"`
-	IsDir          bool   `json:"is_dir"`
-	Publisher115ID string `json:"publisher_115_id"`
-	SeasonNumber   *int   `json:"season_number,omitempty"`
-	EpisodeNumber  *int   `json:"episode_number,omitempty"`
-	ChatMID        string `json:"chat_mid"`
-	ChatContactID  string `json:"chat_contact_id"`
+	ID             any                 `json:"id"`
+	Name           string              `json:"name"`
+	RelativePath   string              `json:"relative_path"`
+	Quality        string              `json:"quality"`
+	Size           int64               `json:"size"`
+	SHA1           string              `json:"sha1"`
+	IsDir          bool                `json:"is_dir"`
+	Publisher115ID string              `json:"publisher_115_id"`
+	SeasonNumber   *int                `json:"season_number,omitempty"`
+	EpisodeNumber  *int                `json:"episode_number,omitempty"`
+	ChatMID        string              `json:"chat_mid"`
+	ChatContactID  string              `json:"chat_contact_id"`
+	Children       []qshareFilePayload `json:"children,omitempty"`
 }
 
 type qshareResourceResponse struct {
@@ -138,16 +140,17 @@ type qshareResourceResponse struct {
 }
 
 type qshareFileResponse struct {
-	ID             uint   `json:"id"`
-	Name           string `json:"name"`
-	RelativePath   string `json:"relative_path"`
-	Quality        string `json:"quality,omitempty"`
-	Size           int64  `json:"size"`
-	SHA1           string `json:"sha1"`
-	IsDir          bool   `json:"is_dir,omitempty"`
-	Publisher115ID string `json:"publisher_115_id"`
-	SeasonNumber   *int   `json:"season_number,omitempty"`
-	EpisodeNumber  *int   `json:"episode_number,omitempty"`
+	ID             uint                 `json:"id"`
+	Name           string               `json:"name"`
+	RelativePath   string               `json:"relative_path"`
+	Quality        string               `json:"quality,omitempty"`
+	Size           int64                `json:"size"`
+	SHA1           string               `json:"sha1"`
+	IsDir          bool                 `json:"is_dir,omitempty"`
+	Publisher115ID string               `json:"publisher_115_id"`
+	SeasonNumber   *int                 `json:"season_number,omitempty"`
+	EpisodeNumber  *int                 `json:"episode_number,omitempty"`
+	Children       []qshareFileResponse `json:"children,omitempty"`
 }
 
 func (a *app) qshareStatus(c *gin.Context) {
@@ -594,6 +597,12 @@ func normalizeQshareResourcePayload(c *gin.Context, payload qshareResourcePayloa
 			SeasonNumber:   item.SeasonNumber,
 			EpisodeNumber:  item.EpisodeNumber,
 		}
+		childrenJSON, err := qshareFileChildrenJSON(item.Children)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file children"})
+			return resource, nil, false
+		}
+		file.ChildrenJSON = childrenJSON
 		if file.Publisher115ID == "" {
 			file.Publisher115ID = resource.Publisher115ID
 		}
@@ -720,10 +729,54 @@ func qshareResourceResponseFromModel(resource QshareResource, includeFiles bool)
 				Publisher115ID: qshareFilePublisher115ID(file, resource),
 				SeasonNumber:   file.SeasonNumber,
 				EpisodeNumber:  file.EpisodeNumber,
+				Children:       qshareFileChildrenFromJSON(file.ChildrenJSON),
 			})
 		}
 	}
 	return response
+}
+
+func qshareFileChildrenJSON(children []qshareFilePayload) (string, error) {
+	if len(children) == 0 {
+		return "", nil
+	}
+	out := make([]qshareFileResponse, 0, len(children))
+	for _, child := range children {
+		item := qshareFileResponse{
+			Name:          truncate(strings.TrimSpace(child.Name), 512),
+			RelativePath:  truncate(strings.TrimSpace(child.RelativePath), 1024),
+			Quality:       truncate(strings.TrimSpace(child.Quality), 512),
+			Size:          child.Size,
+			SHA1:          strings.ToUpper(truncate(strings.TrimSpace(child.SHA1), 40)),
+			IsDir:         child.IsDir,
+			SeasonNumber:  child.SeasonNumber,
+			EpisodeNumber: child.EpisodeNumber,
+		}
+		if item.Name == "" || item.RelativePath == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	if len(out) == 0 {
+		return "", nil
+	}
+	data, err := json.Marshal(out)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func qshareFileChildrenFromJSON(raw string) []qshareFileResponse {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var children []qshareFileResponse
+	if err := json.Unmarshal([]byte(raw), &children); err != nil {
+		return nil
+	}
+	return children
 }
 
 func qshareFilePublisher115ID(file QshareFile, resource QshareResource) string {
