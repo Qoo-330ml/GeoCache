@@ -81,6 +81,7 @@ func main() {
 	admin.GET("/qshare/resources/:id", a.getAdminQshareResource)
 	admin.PUT("/qshare/resources/:id", a.updateAdminQshareResource)
 	admin.POST("/qshare/resources/:id/unpublish", a.unpublishAdminQshareResource)
+	admin.POST("/qshare/resources/batch-delete", a.batchDeleteAdminQshareResources)
 
 	addr := env("SERVER_ADDR", ":2090")
 	log.Printf("qmby-license-server listening on %s", addr)

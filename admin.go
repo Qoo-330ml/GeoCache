@@ -323,11 +323,12 @@ const adminHTML = `<!doctype html>
           <div><label>搜索标题、TMDB、发布者或路径</label><input id="qshareSearch" placeholder="标题、TMDB、邮箱、实例或路径" oninput="loadQshareDebounced()" /></div>
           <div><label>状态</label><select id="qshareStatus" onchange="loadQshareResources()"><option value="">全部</option><option value="published">已发布</option><option value="deleted">已下架</option></select></div>
           <button class="secondary" onclick="loadQshareResources()">查询</button>
+          <button id="batchDeleteQshareBtn" class="danger" onclick="batchDeleteQshareResources()" disabled>批量删除</button>
         </div>
         <div style="height:14px"></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>资源</th><th>类型 / TMDB</th><th>发布者</th><th>文件</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
-          <tbody id="qshareRows"><tr><td colspan="7">加载中...</td></tr></tbody>
+          <thead><tr><th style="width:40px"><input type="checkbox" id="qshareSelectAll" onchange="toggleAllQshare()" /></th><th>资源</th><th>类型 / TMDB</th><th>发布者</th><th>文件</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody id="qshareRows"><tr><td colspan="8">加载中...</td></tr></tbody>
         </table></div>
       </div>
     </section>
@@ -632,6 +633,7 @@ const adminHTML = `<!doctype html>
         const data = await api("/api/admin/qshare/resources?" + params.toString());
         $("qshareRows").innerHTML = (data.resources || []).map(row =>
           "<tr>" +
+            "<td><input type=\"checkbox\" class=\"qshare-checkbox\" value=\"" + row.id + "\" onchange=\"updateBatchDeleteBtn()\" /></td>" +
             "<td><strong>" + esc(row.title) + "</strong><div class=\"note\">" + esc(row.source_path) + "</div></td>" +
             "<td><span class=\"badge issued\">" + esc(row.media_type) + "</span><div class=\"note\">TMDB " + esc(row.tmdb_id || "-") + " · " + esc(row.year) + "</div></td>" +
             "<td><strong>" + esc(row.owner_label) + "</strong><div class=\"note\">" + esc(row.publisher_email) + "</div><div class=\"note\"><code>" + esc(row.instance_id) + "</code></div></td>" +
@@ -640,7 +642,9 @@ const adminHTML = `<!doctype html>
             "<td>" + fmtFull(row.updated_at) + "</td>" +
             "<td><button class=\"secondary\" onclick=\"openQshareResource(" + row.id + ")\">查看 / 编辑</button></td>" +
           "</tr>"
-        ).join("") || "<tr><td colspan=\"7\">暂无 Qshare 内容</td></tr>";
+        ).join("") || "<tr><td colspan=\"8\">暂无 Qshare 内容</td></tr>";
+        $("qshareSelectAll").checked = false;
+        updateBatchDeleteBtn();
       } catch (err) {
         if (err.message === "unauthorized") { showLogin(); return; }
         $("qshareRows").innerHTML = "<tr><td colspan=\"7\">" + esc(err.message) + "</td></tr>";
@@ -703,6 +707,31 @@ const adminHTML = `<!doctype html>
         loadQshareResources();
       } catch (err) {
         $("qshareEditMessage").textContent = err.message;
+      }
+    }
+    function toggleAllQshare() {
+      const checked = $("qshareSelectAll").checked;
+      document.querySelectorAll(".qshare-checkbox").forEach(cb => cb.checked = checked);
+      updateBatchDeleteBtn();
+    }
+    function updateBatchDeleteBtn() {
+      const count = document.querySelectorAll(".qshare-checkbox:checked").length;
+      $("batchDeleteQshareBtn").disabled = count === 0;
+      $("batchDeleteQshareBtn").textContent = count > 0 ? "批量删除 (" + count + ")" : "批量删除";
+    }
+    async function batchDeleteQshareResources() {
+      const ids = Array.from(document.querySelectorAll(".qshare-checkbox:checked")).map(cb => Number(cb.value));
+      if (ids.length === 0) return;
+      if (!confirm("确定要永久删除选中的 " + ids.length + " 个 Qshare 资源吗？\n\n此操作不可撤销，相关文件记录也将一并删除。")) return;
+      try {
+        const data = await api("/api/admin/qshare/resources/batch-delete", {
+          method: "POST",
+          body: JSON.stringify({ ids })
+        });
+        alert("成功删除 " + (data.deleted || 0) + " 个资源");
+        loadQshareResources();
+      } catch (err) {
+        alert("删除失败：" + err.message);
       }
     }
     function toggleIPBests() {
