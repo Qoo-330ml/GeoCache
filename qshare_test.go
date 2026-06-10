@@ -123,6 +123,9 @@ func TestQshareListDetailAndDelete(t *testing.T) {
 	if strings.Contains(detail.Body.String(), "chat_mid") || strings.Contains(detail.Body.String(), "chat_contact_id") {
 		t.Fatalf("detail leaks hidden chat metadata: %s", detail.Body.String())
 	}
+	if !strings.Contains(detail.Body.String(), `"chat_part_folder_ids":{"topSnap":["folder-1"]}`) {
+		t.Fatalf("detail missing chat part ids: %s", detail.Body.String())
+	}
 
 	otherDelete := qshareRequest(t, r, "/api/qshare/resources/delete", qshareResourceIDBody("other@example.com", "qmby-other", true, published.Resource.ID))
 	if otherDelete.Code != http.StatusNotFound {
@@ -423,6 +426,7 @@ func sampleQsharePublishBodyWithSource(email, instanceID string, resourceID uint
 				"sha1": "0123456789abcdef0123456789abcdef01234567"
 				,"chat_mid": "mid-1"
 				,"chat_contact_id": "1182480"
+				,"chat_part_folder_ids": {"topSnap":["folder-1"]}
 			}]
 		}
 	}`

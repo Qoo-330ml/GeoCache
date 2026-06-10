@@ -107,19 +107,21 @@ type qshareResourcePayload struct {
 }
 
 type qshareFilePayload struct {
-	ID             any                 `json:"id"`
-	Name           string              `json:"name"`
-	RelativePath   string              `json:"relative_path"`
-	Quality        string              `json:"quality"`
-	Size           int64               `json:"size"`
-	SHA1           string              `json:"sha1"`
-	IsDir          bool                `json:"is_dir"`
-	Publisher115ID string              `json:"publisher_115_id"`
-	SeasonNumber   *int                `json:"season_number,omitempty"`
-	EpisodeNumber  *int                `json:"episode_number,omitempty"`
-	ChatMID        string              `json:"chat_mid"`
-	ChatContactID  string              `json:"chat_contact_id"`
-	Children       []qshareFilePayload `json:"children,omitempty"`
+	ID                any                 `json:"id"`
+	Name              string              `json:"name"`
+	RelativePath      string              `json:"relative_path"`
+	Quality           string              `json:"quality"`
+	Size              int64               `json:"size"`
+	SHA1              string              `json:"sha1"`
+	IsDir             bool                `json:"is_dir"`
+	Publisher115ID    string              `json:"publisher_115_id"`
+	SeasonNumber      *int                `json:"season_number,omitempty"`
+	EpisodeNumber     *int                `json:"episode_number,omitempty"`
+	ChatMID           string              `json:"chat_mid"`
+	ChatContactID     string              `json:"chat_contact_id"`
+	ChatPartFileIDs   map[string][]string `json:"chat_part_file_ids,omitempty"`
+	ChatPartFolderIDs map[string][]string `json:"chat_part_folder_ids,omitempty"`
+	Children          []qshareFilePayload `json:"children,omitempty"`
 }
 
 type qshareResourceResponse struct {
@@ -140,17 +142,19 @@ type qshareResourceResponse struct {
 }
 
 type qshareFileResponse struct {
-	ID             uint                 `json:"id"`
-	Name           string               `json:"name"`
-	RelativePath   string               `json:"relative_path"`
-	Quality        string               `json:"quality,omitempty"`
-	Size           int64                `json:"size"`
-	SHA1           string               `json:"sha1"`
-	IsDir          bool                 `json:"is_dir,omitempty"`
-	Publisher115ID string               `json:"publisher_115_id"`
-	SeasonNumber   *int                 `json:"season_number,omitempty"`
-	EpisodeNumber  *int                 `json:"episode_number,omitempty"`
-	Children       []qshareFileResponse `json:"children,omitempty"`
+	ID                uint                 `json:"id"`
+	Name              string               `json:"name"`
+	RelativePath      string               `json:"relative_path"`
+	Quality           string               `json:"quality,omitempty"`
+	Size              int64                `json:"size"`
+	SHA1              string               `json:"sha1"`
+	IsDir             bool                 `json:"is_dir,omitempty"`
+	Publisher115ID    string               `json:"publisher_115_id"`
+	SeasonNumber      *int                 `json:"season_number,omitempty"`
+	EpisodeNumber     *int                 `json:"episode_number,omitempty"`
+	ChatPartFileIDs   map[string][]string  `json:"chat_part_file_ids,omitempty"`
+	ChatPartFolderIDs map[string][]string  `json:"chat_part_folder_ids,omitempty"`
+	Children          []qshareFileResponse `json:"children,omitempty"`
 }
 
 func (a *app) qshareStatus(c *gin.Context) {
@@ -602,7 +606,19 @@ func normalizeQshareResourcePayload(c *gin.Context, payload qshareResourcePayloa
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file children"})
 			return resource, nil, false
 		}
+		partFileIDsJSON, err := qsharePartIDsJSON(item.ChatPartFileIDs)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid chat_part_file_ids"})
+			return resource, nil, false
+		}
+		partFolderIDsJSON, err := qsharePartIDsJSON(item.ChatPartFolderIDs)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid chat_part_folder_ids"})
+			return resource, nil, false
+		}
 		file.ChildrenJSON = childrenJSON
+		file.ChatPartFileIDsJSON = partFileIDsJSON
+		file.ChatPartFolderIDsJSON = partFolderIDsJSON
 		if file.Publisher115ID == "" {
 			file.Publisher115ID = resource.Publisher115ID
 		}
@@ -719,17 +735,19 @@ func qshareResourceResponseFromModel(resource QshareResource, includeFiles bool)
 		response.Files = make([]qshareFileResponse, 0, len(resource.Files))
 		for _, file := range resource.Files {
 			response.Files = append(response.Files, qshareFileResponse{
-				ID:             file.ID,
-				Name:           file.Name,
-				RelativePath:   file.RelativePath,
-				Quality:        file.Quality,
-				Size:           file.Size,
-				SHA1:           file.SHA1,
-				IsDir:          file.IsDir,
-				Publisher115ID: qshareFilePublisher115ID(file, resource),
-				SeasonNumber:   file.SeasonNumber,
-				EpisodeNumber:  file.EpisodeNumber,
-				Children:       qshareFileChildrenFromJSON(file.ChildrenJSON),
+				ID:                file.ID,
+				Name:              file.Name,
+				RelativePath:      file.RelativePath,
+				Quality:           file.Quality,
+				Size:              file.Size,
+				SHA1:              file.SHA1,
+				IsDir:             file.IsDir,
+				Publisher115ID:    qshareFilePublisher115ID(file, resource),
+				SeasonNumber:      file.SeasonNumber,
+				EpisodeNumber:     file.EpisodeNumber,
+				ChatPartFileIDs:   qsharePartIDsFromJSON(file.ChatPartFileIDsJSON),
+				ChatPartFolderIDs: qsharePartIDsFromJSON(file.ChatPartFolderIDsJSON),
+				Children:          qshareFileChildrenFromJSON(file.ChildrenJSON),
 			})
 		}
 	}
@@ -777,6 +795,49 @@ func qshareFileChildrenFromJSON(raw string) []qshareFileResponse {
 		return nil
 	}
 	return children
+}
+
+func qsharePartIDsJSON(parts map[string][]string) (string, error) {
+	if len(parts) == 0 {
+		return "", nil
+	}
+	cleaned := make(map[string][]string, len(parts))
+	for snapID, ids := range parts {
+		snapID = strings.TrimSpace(snapID)
+		if snapID == "" {
+			continue
+		}
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			cleaned[snapID] = append(cleaned[snapID], truncate(id, 128))
+		}
+	}
+	if len(cleaned) == 0 {
+		return "", nil
+	}
+	data, err := json.Marshal(cleaned)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func qsharePartIDsFromJSON(raw string) map[string][]string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var parts map[string][]string
+	if err := json.Unmarshal([]byte(raw), &parts); err != nil {
+		return nil
+	}
+	if len(parts) == 0 {
+		return nil
+	}
+	return parts
 }
 
 func qshareFilePublisher115ID(file QshareFile, resource QshareResource) string {
