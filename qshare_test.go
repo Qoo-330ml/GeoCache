@@ -163,6 +163,7 @@ func TestQshareForwardRequestRelay(t *testing.T) {
 	a := testQshareApp(t)
 	createActiveQshareLicense(t, a, "owner@example.com")
 	createActiveQshareLicense(t, a, "receiver@example.com")
+	createActiveQshareLicense(t, a, "worker@example.com")
 	r := testQshareRouter(a)
 
 	publish := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBody("owner@example.com", "qmby-owner", 0, "Interstellar"))
@@ -183,7 +184,12 @@ func TestQshareForwardRequestRelay(t *testing.T) {
 		t.Fatalf("forward create code = %d, body = %s", created.Code, created.Body.String())
 	}
 
-	poll := qshareRequest(t, r, "/api/qshare/forward/poll", qshareBaseBody("owner@example.com", "qmby-owner", false))
+	ownerPollWithout115ID := qshareRequest(t, r, "/api/qshare/forward/poll", qshareBaseBody("owner@example.com", "qmby-owner", false))
+	if ownerPollWithout115ID.Code != http.StatusOK || !strings.Contains(ownerPollWithout115ID.Body.String(), `"requests":[]`) {
+		t.Fatalf("poll without publisher 115 ids should be empty: code = %d body = %s", ownerPollWithout115ID.Code, ownerPollWithout115ID.Body.String())
+	}
+
+	poll := qshareRequest(t, r, "/api/qshare/forward/poll", qshareForwardPollBody("worker@example.com", "qmby-worker", "4577361"))
 	if poll.Code != http.StatusOK || !strings.Contains(poll.Body.String(), `"chat_mid":"mid-1"`) || !strings.Contains(poll.Body.String(), `"publisher_115_id":"4577361"`) {
 		t.Fatalf("forward poll failed: code = %d body = %s", poll.Code, poll.Body.String())
 	}
@@ -194,12 +200,12 @@ func TestQshareForwardRequestRelay(t *testing.T) {
 	if err := json.Unmarshal(poll.Body.Bytes(), &polled); err != nil || len(polled.Requests) != 1 {
 		t.Fatalf("decode forward poll: err = %v body = %s", err, poll.Body.String())
 	}
-	completeBody := `{"email":"owner@example.com","instance_id":"qmby-owner","beijing_time":"2026-06-09 17:30:00","request_id":` + strconvUint(polled.Requests[0].ID) + `}`
+	completeBody := `{"email":"worker@example.com","instance_id":"qmby-worker","beijing_time":"2026-06-09 17:30:00","request_id":` + strconvUint(polled.Requests[0].ID) + `,"publisher_115_ids":["4577361"]}`
 	completed := qshareRequest(t, r, "/api/qshare/forward/complete", completeBody)
 	if completed.Code != http.StatusOK {
 		t.Fatalf("forward complete failed: code = %d body = %s", completed.Code, completed.Body.String())
 	}
-	emptyPoll := qshareRequest(t, r, "/api/qshare/forward/poll", qshareBaseBody("owner@example.com", "qmby-owner", false))
+	emptyPoll := qshareRequest(t, r, "/api/qshare/forward/poll", qshareForwardPollBody("worker@example.com", "qmby-worker", "4577361"))
 	if emptyPoll.Code != http.StatusOK || !strings.Contains(emptyPoll.Body.String(), `"requests":[]`) {
 		t.Fatalf("completed request should not be polled again: code = %d body = %s", emptyPoll.Code, emptyPoll.Body.String())
 	}
@@ -261,6 +267,11 @@ func qshareBaseBody(email, instanceID string, publishFolderConfigured bool) stri
 
 func qshareResourceIDBody(email, instanceID string, publishFolderConfigured bool, resourceID uint) string {
 	return `{"email":"` + email + `","instance_id":"` + instanceID + `","beijing_time":"2026-06-09 17:30:00","publish_folder_configured":` + strconv.FormatBool(publishFolderConfigured) + `,"resource_id":` + strconvUint(resourceID) + `}`
+}
+
+func qshareForwardPollBody(email, instanceID string, publisher115IDs ...string) string {
+	ids, _ := json.Marshal(publisher115IDs)
+	return `{"email":"` + email + `","instance_id":"` + instanceID + `","beijing_time":"2026-06-09 17:30:00","publish_folder_configured":false,"publisher_115_ids":` + string(ids) + `}`
 }
 
 func sampleQsharePublishBody(email, instanceID string, resourceID uint, title string) string {

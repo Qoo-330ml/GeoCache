@@ -61,20 +61,22 @@ type qshareForwardCreateRequest struct {
 }
 
 type qshareForwardIDRequest struct {
-	Email                   string `json:"email"`
-	InstanceID              string `json:"instance_id"`
-	BeijingTime             string `json:"beijing_time"`
-	PublishFolderConfigured bool   `json:"publish_folder_configured"`
-	RequestID               any    `json:"request_id"`
-	Error                   string `json:"error,omitempty"`
+	Email                   string   `json:"email"`
+	InstanceID              string   `json:"instance_id"`
+	BeijingTime             string   `json:"beijing_time"`
+	PublishFolderConfigured bool     `json:"publish_folder_configured"`
+	RequestID               any      `json:"request_id"`
+	Error                   string   `json:"error,omitempty"`
+	Publisher115IDs         []string `json:"publisher_115_ids"`
 }
 
 type qshareForwardPollRequest struct {
-	Email                   string `json:"email"`
-	InstanceID              string `json:"instance_id"`
-	BeijingTime             string `json:"beijing_time"`
-	PublishFolderConfigured bool   `json:"publish_folder_configured"`
-	Limit                   int    `json:"limit"`
+	Email                   string   `json:"email"`
+	InstanceID              string   `json:"instance_id"`
+	BeijingTime             string   `json:"beijing_time"`
+	PublishFolderConfigured bool     `json:"publish_folder_configured"`
+	Limit                   int      `json:"limit"`
+	Publisher115IDs         []string `json:"publisher_115_ids"`
 }
 
 type qshareForwardRequestResponse struct {
@@ -377,12 +379,17 @@ func (a *app) pollQshareForwardRequests(c *gin.Context) {
 	if limit <= 0 || limit > 20 {
 		limit = 10
 	}
+	publisherIDs := normalizeQshare115IDs(req.Publisher115IDs)
+	if len(publisherIDs) == 0 {
+		c.JSON(http.StatusOK, gin.H{"requests": []qshareForwardRequestResponse{}})
+		return
+	}
 	now := time.Now().In(beijingLocation())
 	a.db.Model(&QshareForwardRequest{}).
-		Where("publisher_email = ? AND publisher_instance = ? AND status = ? AND expires_at < ?", identity.Email, identity.InstanceID, qshareForwardPending, now).
+		Where("publisher115_id IN ? AND status = ? AND expires_at < ?", publisherIDs, qshareForwardPending, now).
 		Updates(map[string]any{"status": qshareForwardFailed, "error": "转发请求已过期", "completed_at": now})
 	var requests []QshareForwardRequest
-	if err := a.db.Where("publisher_email = ? AND publisher_instance = ? AND status = ? AND expires_at >= ?", identity.Email, identity.InstanceID, qshareForwardPending, now).
+	if err := a.db.Where("publisher115_id IN ? AND status = ? AND expires_at >= ?", publisherIDs, qshareForwardPending, now).
 		Order("created_at ASC").Limit(limit).Find(&requests).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -409,8 +416,13 @@ func (a *app) completeQshareForwardRequest(c *gin.Context) {
 		return
 	}
 	requestID := qsharePayloadUint(req.RequestID)
+	publisherIDs := normalizeQshare115IDs(req.Publisher115IDs)
+	if len(publisherIDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "publisher_115_ids required"})
+		return
+	}
 	var item QshareForwardRequest
-	if requestID == 0 || a.db.Where("id = ? AND publisher_email = ? AND publisher_instance = ?", requestID, identity.Email, identity.InstanceID).First(&item).Error != nil {
+	if requestID == 0 || a.db.Where("id = ? AND publisher115_id IN ?", requestID, publisherIDs).First(&item).Error != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "转发请求不存在"})
 		return
 	}
@@ -424,6 +436,20 @@ func (a *app) completeQshareForwardRequest(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+func normalizeQshare115IDs(values []string) []string {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.SplitN(strings.TrimSpace(value), "_", 2)[0]
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		result = append(result, truncate(value, 32))
+	}
+	return result
 }
 
 func qshareBindJSON(c *gin.Context, req any) bool {
