@@ -197,6 +197,7 @@ type QshareResource struct {
 	ID             uint         `gorm:"primaryKey" json:"id"`
 	PublisherEmail string       `gorm:"index;size:320;not null" json:"-"`
 	InstanceID     string       `gorm:"index;size:128;not null" json:"-"`
+	Publisher115ID string       `gorm:"index;size:32;not null;default:''" json:"publisher_115_id"`
 	SourceID       string       `gorm:"index;size:32;not null" json:"source_id"`
 	Title          string       `gorm:"size:256;not null" json:"title"`
 	MediaType      string       `gorm:"index;size:32;not null" json:"media_type"`
@@ -219,7 +220,29 @@ type QshareFile struct {
 	Size          int64     `gorm:"not null" json:"size"`
 	SHA1          string    `gorm:"index;size:40;not null" json:"sha1"`
 	RelativePath  string    `gorm:"size:1024;not null" json:"relative_path"`
+	ChatMID       string    `gorm:"index;size:32;not null;default:''" json:"-"`
+	ChatContactID string    `gorm:"size:32;not null;default:''" json:"-"`
 	SeasonNumber  *int      `json:"season_number,omitempty"`
 	EpisodeNumber *int      `json:"episode_number,omitempty"`
 	CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
+}
+
+type QshareForwardRequest struct {
+	ID                uint       `gorm:"primaryKey" json:"id"`
+	ResourceID        uint       `gorm:"index;not null" json:"resource_id"`
+	FileID            uint       `gorm:"index;not null" json:"file_id"`
+	PublisherEmail    string     `gorm:"index;size:320;not null" json:"-"`
+	PublisherInstance string     `gorm:"index;size:128;not null" json:"-"`
+	RequesterEmail    string     `gorm:"index;size:320;not null" json:"-"`
+	RequesterInstance string     `gorm:"index;size:128;not null" json:"-"`
+	Publisher115ID    string     `gorm:"index;size:32;not null" json:"publisher_115_id"`
+	Target115ID       string     `gorm:"size:32;not null" json:"target_115_id"`
+	ChatMID           string     `gorm:"size:32;not null" json:"chat_mid"`
+	ChatContactID     string     `gorm:"size:32;not null" json:"chat_contact_id"`
+	Status            string     `gorm:"index;size:32;not null;default:pending" json:"status"`
+	Error             string     `gorm:"size:1024" json:"error,omitempty"`
+	ExpiresAt         time.Time  `gorm:"index;not null" json:"expires_at"`
+	CompletedAt       *time.Time `json:"completed_at,omitempty"`
+	CreatedAt         time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
+	UpdatedAt         time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }

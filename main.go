@@ -61,6 +61,9 @@ func main() {
 	r.POST("/api/qshare/resources/list", a.requireLicenseKey(), a.listQshareResources)
 	r.POST("/api/qshare/resources/detail", a.requireLicenseKey(), a.getQshareResourceDetail)
 	r.POST("/api/qshare/resources/delete", a.requireLicenseKey(), a.deleteQshareResource)
+	r.POST("/api/qshare/forward/request", a.requireLicenseKey(), a.createQshareForwardRequests)
+	r.POST("/api/qshare/forward/poll", a.requireLicenseKey(), a.pollQshareForwardRequests)
+	r.POST("/api/qshare/forward/complete", a.requireLicenseKey(), a.completeQshareForwardRequest)
 	r.GET("/api/ip/lookup", a.lookupIP)
 
 	admin := r.Group("/api/admin")
@@ -74,6 +77,10 @@ func main() {
 	admin.GET("/organizer/failed-records/export", a.exportOrganizerFailedRecords)
 	admin.GET("/features", a.listFeatures)
 	admin.PUT("/features", a.updateFeatures)
+	admin.GET("/qshare/resources", a.listAdminQshareResources)
+	admin.GET("/qshare/resources/:id", a.getAdminQshareResource)
+	admin.PUT("/qshare/resources/:id", a.updateAdminQshareResource)
+	admin.POST("/qshare/resources/:id/unpublish", a.unpublishAdminQshareResource)
 
 	addr := env("SERVER_ADDR", ":2090")
 	log.Printf("qmby-license-server listening on %s", addr)

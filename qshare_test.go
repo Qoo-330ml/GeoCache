@@ -38,8 +38,8 @@ func TestQshareStatusAndListUsePublishFolderConfigured(t *testing.T) {
 	if disabled.Code != http.StatusOK {
 		t.Fatalf("disabled list code = %d, body = %s", disabled.Code, disabled.Body.String())
 	}
-	if !strings.Contains(disabled.Body.String(), `"can_browse":false`) || !strings.Contains(disabled.Body.String(), `"resources":[]`) {
-		t.Fatalf("list should be disabled without publish folder: %s", disabled.Body.String())
+	if !strings.Contains(disabled.Body.String(), `"can_browse":true`) || !strings.Contains(disabled.Body.String(), `"resources":[]`) {
+		t.Fatalf("list should remain available without publish folder: %s", disabled.Body.String())
 	}
 }
 
@@ -108,9 +108,9 @@ func TestQshareListDetailAndDelete(t *testing.T) {
 		t.Fatalf("list leaks owner identity: %s", list.Body.String())
 	}
 
-	blockedDetail := qshareRequest(t, r, "/api/qshare/resources/detail", qshareResourceIDBody("owner@example.com", "qmby-owner", false, published.Resource.ID))
-	if blockedDetail.Code != http.StatusForbidden {
-		t.Fatalf("blocked detail code = %d, body = %s", blockedDetail.Code, blockedDetail.Body.String())
+	detailWithoutPublishFolder := qshareRequest(t, r, "/api/qshare/resources/detail", qshareResourceIDBody("owner@example.com", "qmby-owner", false, published.Resource.ID))
+	if detailWithoutPublishFolder.Code != http.StatusOK {
+		t.Fatalf("detail without publish folder code = %d, body = %s", detailWithoutPublishFolder.Code, detailWithoutPublishFolder.Body.String())
 	}
 
 	detail := qshareRequest(t, r, "/api/qshare/resources/detail", qshareResourceIDBody("owner@example.com", "qmby-owner", true, published.Resource.ID))
@@ -119,6 +119,9 @@ func TestQshareListDetailAndDelete(t *testing.T) {
 	}
 	if !strings.Contains(detail.Body.String(), `"files":[`) || !strings.Contains(detail.Body.String(), `"sha1":"0123456789ABCDEF0123456789ABCDEF01234567"`) {
 		t.Fatalf("detail missing files: %s", detail.Body.String())
+	}
+	if strings.Contains(detail.Body.String(), "chat_mid") || strings.Contains(detail.Body.String(), "chat_contact_id") {
+		t.Fatalf("detail leaks hidden chat metadata: %s", detail.Body.String())
 	}
 
 	otherDelete := qshareRequest(t, r, "/api/qshare/resources/delete", qshareResourceIDBody("other@example.com", "qmby-other", true, published.Resource.ID))
@@ -156,6 +159,52 @@ func TestQshareAcceptsStringIDs(t *testing.T) {
 	}
 }
 
+func TestQshareForwardRequestRelay(t *testing.T) {
+	a := testQshareApp(t)
+	createActiveQshareLicense(t, a, "owner@example.com")
+	createActiveQshareLicense(t, a, "receiver@example.com")
+	r := testQshareRouter(a)
+
+	publish := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBody("owner@example.com", "qmby-owner", 0, "Interstellar"))
+	if publish.Code != http.StatusOK {
+		t.Fatalf("publish code = %d, body = %s", publish.Code, publish.Body.String())
+	}
+	var published struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(publish.Body.Bytes(), &published); err != nil {
+		t.Fatalf("decode publish: %v", err)
+	}
+	fileID := published.Resource.Files[0].ID
+
+	createBody := `{"email":"receiver@example.com","instance_id":"qmby-receiver","beijing_time":"2026-06-09 17:30:00","resource_id":` + strconvUint(published.Resource.ID) + `,"file_ids":[` + strconvUint(fileID) + `],"target_115_id":"123456"}`
+	created := qshareRequest(t, r, "/api/qshare/forward/request", createBody)
+	if created.Code != http.StatusOK {
+		t.Fatalf("forward create code = %d, body = %s", created.Code, created.Body.String())
+	}
+
+	poll := qshareRequest(t, r, "/api/qshare/forward/poll", qshareBaseBody("owner@example.com", "qmby-owner", false))
+	if poll.Code != http.StatusOK || !strings.Contains(poll.Body.String(), `"chat_mid":"mid-1"`) || !strings.Contains(poll.Body.String(), `"publisher_115_id":"4577361"`) {
+		t.Fatalf("forward poll failed: code = %d body = %s", poll.Code, poll.Body.String())
+	}
+
+	var polled struct {
+		Requests []qshareForwardRequestResponse `json:"requests"`
+	}
+	if err := json.Unmarshal(poll.Body.Bytes(), &polled); err != nil || len(polled.Requests) != 1 {
+		t.Fatalf("decode forward poll: err = %v body = %s", err, poll.Body.String())
+	}
+	completeBody := `{"email":"owner@example.com","instance_id":"qmby-owner","beijing_time":"2026-06-09 17:30:00","request_id":` + strconvUint(polled.Requests[0].ID) + `}`
+	completed := qshareRequest(t, r, "/api/qshare/forward/complete", completeBody)
+	if completed.Code != http.StatusOK {
+		t.Fatalf("forward complete failed: code = %d body = %s", completed.Code, completed.Body.String())
+	}
+	emptyPoll := qshareRequest(t, r, "/api/qshare/forward/poll", qshareBaseBody("owner@example.com", "qmby-owner", false))
+	if emptyPoll.Code != http.StatusOK || !strings.Contains(emptyPoll.Body.String(), `"requests":[]`) {
+		t.Fatalf("completed request should not be polled again: code = %d body = %s", emptyPoll.Code, emptyPoll.Body.String())
+	}
+}
+
 func testQshareApp(t *testing.T) *app {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -173,6 +222,9 @@ func testQshareRouter(a *app) *gin.Engine {
 	r.POST("/api/qshare/resources/list", a.requireLicenseKey(), a.listQshareResources)
 	r.POST("/api/qshare/resources/detail", a.requireLicenseKey(), a.getQshareResourceDetail)
 	r.POST("/api/qshare/resources/delete", a.requireLicenseKey(), a.deleteQshareResource)
+	r.POST("/api/qshare/forward/request", a.requireLicenseKey(), a.createQshareForwardRequests)
+	r.POST("/api/qshare/forward/poll", a.requireLicenseKey(), a.pollQshareForwardRequests)
+	r.POST("/api/qshare/forward/complete", a.requireLicenseKey(), a.completeQshareForwardRequest)
 	return r
 }
 
@@ -233,6 +285,7 @@ func sampleQsharePublishBodyWithSource(email, instanceID string, resourceID uint
 			"year": 2014,
 			"poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
 			"source_path": "` + sourcePath + `",
+			"publisher_115_id": "4577361",
 			"file_count": 1,
 			"total_size": 123456789,
 			"files": [{
@@ -241,6 +294,8 @@ func sampleQsharePublishBodyWithSource(email, instanceID string, resourceID uint
 				"relative_path": "Interstellar/Interstellar.mkv",
 				"size": 123456789,
 				"sha1": "0123456789abcdef0123456789abcdef01234567"
+				,"chat_mid": "mid-1"
+				,"chat_contact_id": "1182480"
 			}]
 		}
 	}`

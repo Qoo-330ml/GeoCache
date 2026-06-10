@@ -137,6 +137,7 @@ const adminHTML = `<!doctype html>
     .filters { display: grid; grid-template-columns: 1fr 150px 150px auto; gap: 12px; align-items: end; }
     .client-filters { display: grid; grid-template-columns: 1fr 130px 130px auto; gap: 12px; align-items: end; }
     .ip-bests-filters { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; }
+    .qshare-filters { display: grid; grid-template-columns: 1fr 150px auto; gap: 12px; align-items: end; }
     .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
     .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
     .feature-card { border: 1px solid var(--line); border-radius: 8px; padding: 14px; background: rgba(255,255,255,.38); display: grid; gap: 10px; }
@@ -180,10 +181,17 @@ const adminHTML = `<!doctype html>
     .disabled { background: rgba(100,116,139,.16); color: var(--muted); }
     .expired { background: rgba(245,158,11,.13); color: var(--warn); }
 	    .note { color: var(--muted); font-size: 12px; margin-top: 3px; }
+    .modal-backdrop { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(15,23,42,.58); }
+    .modal { width: min(860px, 100%); max-height: calc(100vh - 40px); overflow: auto; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 24px 80px rgba(15,23,42,.35); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 18px; border-bottom: 1px solid var(--line); }
+    .modal-body { padding: 18px; }
+    .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+    .file-list { margin-top: 16px; max-height: 260px; overflow: auto; }
     @media (max-width: 820px) {
 	      header, .generated { align-items: stretch; flex-direction: column; }
       .grid, .filters { grid-template-columns: 1fr; }
-      .client-filters, .stats-grid, .features-grid, .ip-bests-filters { grid-template-columns: 1fr; }
+      .client-filters, .stats-grid, .features-grid, .ip-bests-filters, .qshare-filters, .modal-grid { grid-template-columns: 1fr; }
 	      .header-actions { flex-direction: column; align-items: stretch; }
 	      button { width: 100%; }
 	    }
@@ -221,6 +229,7 @@ const adminHTML = `<!doctype html>
 	        <p>独立授权服务：生成邮箱绑定激活码，Qmby 联网后按邮箱校验会员。</p>
 	      </div>
 	      <div class="header-actions">
+        <button class="secondary" onclick="toggleQshare()">Qshare管理</button>
         <button class="secondary" onclick="toggleIPBests()">IP归属地数据库</button>
         <button class="secondary" onclick="exportOrganizerFailedRecords()">导出整理失败记录</button>
         <button class="secondary" onclick="refreshAll()">刷新</button>
@@ -307,6 +316,22 @@ const adminHTML = `<!doctype html>
       </div>
     </section>
 
+    <section id="qsharePanel" class="panel hidden">
+      <div class="panel-head"><h2>Qshare 共享内容</h2></div>
+      <div class="panel-body">
+        <div class="qshare-filters">
+          <div><label>搜索标题、TMDB、发布者或路径</label><input id="qshareSearch" placeholder="标题、TMDB、邮箱、实例或路径" oninput="loadQshareDebounced()" /></div>
+          <div><label>状态</label><select id="qshareStatus" onchange="loadQshareResources()"><option value="">全部</option><option value="published">已发布</option><option value="deleted">已下架</option></select></div>
+          <button class="secondary" onclick="loadQshareResources()">查询</button>
+        </div>
+        <div style="height:14px"></div>
+        <div class="table-wrap"><table>
+          <thead><tr><th>资源</th><th>类型 / TMDB</th><th>发布者</th><th>文件</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead>
+          <tbody id="qshareRows"><tr><td colspan="7">加载中...</td></tr></tbody>
+        </table></div>
+      </div>
+    </section>
+
     <section id="ipBestsPanel" class="panel hidden">
       <div class="panel-head"><h2>IP归属地数据库</h2></div>
       <div class="panel-body">
@@ -323,6 +348,36 @@ const adminHTML = `<!doctype html>
     </section>
   </div>
 
+  <div id="qshareModal" class="modal-backdrop hidden" onclick="closeQshareModal(event)">
+    <section class="modal" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <div><h2 style="margin:0">编辑 Qshare 资源</h2><div id="qshareOwner" class="note"></div></div>
+        <button class="secondary" onclick="closeQshareModal()">关闭</button>
+      </div>
+      <div class="modal-body">
+        <input id="qshareEditID" type="hidden" />
+        <div class="modal-grid">
+          <div><label>标题</label><input id="qshareEditTitle" /></div>
+          <div><label>年份</label><input id="qshareEditYear" type="number" /></div>
+          <div><label>媒体类型</label><select id="qshareEditMediaType"><option value="movie">movie</option><option value="tv">tv</option></select></div>
+          <div><label>TMDB ID</label><input id="qshareEditTMDBID" /></div>
+          <div style="grid-column:1/-1"><label>海报地址</label><input id="qshareEditPosterURL" /></div>
+          <div style="grid-column:1/-1"><label>来源路径</label><input id="qshareEditSourcePath" /></div>
+        </div>
+        <div id="qshareEditMeta" class="msg"></div>
+        <div class="file-list table-wrap"><table>
+          <thead><tr><th>文件</th><th>相对路径</th><th>大小</th><th>SHA1</th></tr></thead>
+          <tbody id="qshareFileRows"></tbody>
+        </table></div>
+        <div class="modal-actions">
+          <button id="qshareUnpublishButton" class="danger" onclick="unpublishQshareResource()">下架</button>
+          <button onclick="saveQshareResource()">保存修改</button>
+        </div>
+        <div id="qshareEditMessage" class="msg"></div>
+      </div>
+    </section>
+  </div>
+
   <script>
     const levelLabels = { trial: "7天试用", yearly: "年费会员", permanent: "永久会员", beta: "内测会员" };
     const statusLabels = { issued: "待激活", active: "已激活", disabled: "已禁用", expired: "已过期" };
@@ -331,6 +386,7 @@ const adminHTML = `<!doctype html>
     let timer = 0;
     let clientTimer = 0;
     let ipBestTimer = 0;
+    let qshareTimer = 0;
 
     function $(id) { return document.getElementById(id); }
 	    function authHeader() {
@@ -546,6 +602,107 @@ const adminHTML = `<!doctype html>
           return;
         }
         $("clientRows").innerHTML = "<tr><td colspan=\"8\">" + esc(err.message) + "</td></tr>";
+      }
+    }
+    function toggleQshare() {
+      const panel = $("qsharePanel");
+      panel.classList.toggle("hidden");
+      if (!panel.classList.contains("hidden")) loadQshareResources();
+    }
+    function loadQshareDebounced() {
+      clearTimeout(qshareTimer);
+      qshareTimer = setTimeout(loadQshareResources, 250);
+    }
+    function fmtBytes(value) {
+      let size = Number(value || 0);
+      const units = ["B", "KB", "MB", "GB", "TB"];
+      let unit = 0;
+      while (size >= 1024 && unit < units.length - 1) {
+        size /= 1024;
+        unit++;
+      }
+      return (unit === 0 ? size : size.toFixed(2)) + " " + units[unit];
+    }
+    async function loadQshareResources() {
+      const params = new URLSearchParams();
+      if ($("qshareSearch").value.trim()) params.set("search", $("qshareSearch").value.trim());
+      if ($("qshareStatus").value) params.set("status", $("qshareStatus").value);
+      params.set("limit", "200");
+      try {
+        const data = await api("/api/admin/qshare/resources?" + params.toString());
+        $("qshareRows").innerHTML = (data.resources || []).map(row =>
+          "<tr>" +
+            "<td><strong>" + esc(row.title) + "</strong><div class=\"note\">" + esc(row.source_path) + "</div></td>" +
+            "<td><span class=\"badge issued\">" + esc(row.media_type) + "</span><div class=\"note\">TMDB " + esc(row.tmdb_id || "-") + " · " + esc(row.year) + "</div></td>" +
+            "<td><strong>" + esc(row.owner_label) + "</strong><div class=\"note\">" + esc(row.publisher_email) + "</div><div class=\"note\"><code>" + esc(row.instance_id) + "</code></div></td>" +
+            "<td>" + (row.file_count || 0) + "<div class=\"note\">" + fmtBytes(row.total_size) + "</div></td>" +
+            "<td><span class=\"badge " + (row.status === "published" ? "active" : "disabled") + "\">" + (row.status === "published" ? "已发布" : "已下架") + "</span></td>" +
+            "<td>" + fmtFull(row.updated_at) + "</td>" +
+            "<td><button class=\"secondary\" onclick=\"openQshareResource(" + row.id + ")\">查看 / 编辑</button></td>" +
+          "</tr>"
+        ).join("") || "<tr><td colspan=\"7\">暂无 Qshare 内容</td></tr>";
+      } catch (err) {
+        if (err.message === "unauthorized") { showLogin(); return; }
+        $("qshareRows").innerHTML = "<tr><td colspan=\"7\">" + esc(err.message) + "</td></tr>";
+      }
+    }
+    async function openQshareResource(id) {
+      try {
+        const data = await api("/api/admin/qshare/resources/" + id);
+        const row = data.resource;
+        $("qshareEditID").value = row.id;
+        $("qshareEditTitle").value = row.title || "";
+        $("qshareEditYear").value = row.year || "";
+        $("qshareEditMediaType").value = row.media_type || "movie";
+        $("qshareEditTMDBID").value = row.tmdb_id || "";
+        $("qshareEditPosterURL").value = row.poster_url || "";
+        $("qshareEditSourcePath").value = row.source_path || "";
+        $("qshareOwner").textContent = (row.owner_label || "") + " · " + (row.publisher_email || "") + " · " + (row.instance_id || "");
+        $("qshareEditMeta").textContent = "状态：" + (row.status === "published" ? "已发布" : "已下架") + " · " + (row.file_count || 0) + " 个文件 · " + fmtBytes(row.total_size);
+        $("qshareUnpublishButton").disabled = row.status !== "published";
+        $("qshareEditMessage").textContent = "";
+        $("qshareFileRows").innerHTML = (row.files || []).map(file =>
+          "<tr><td><strong>" + esc(file.name) + "</strong></td><td>" + esc(file.relative_path) + "</td><td>" + fmtBytes(file.size) + "</td><td><code>" + esc(file.sha1) + "</code></td></tr>"
+        ).join("") || "<tr><td colspan=\"4\">暂无文件</td></tr>";
+        $("qshareModal").classList.remove("hidden");
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+    function closeQshareModal(event) {
+      if (event && event.target !== $("qshareModal")) return;
+      $("qshareModal").classList.add("hidden");
+    }
+    async function saveQshareResource() {
+      const id = $("qshareEditID").value;
+      $("qshareEditMessage").textContent = "";
+      try {
+        await api("/api/admin/qshare/resources/" + id, {
+          method: "PUT",
+          body: JSON.stringify({
+            title: $("qshareEditTitle").value,
+            year: Number($("qshareEditYear").value),
+            media_type: $("qshareEditMediaType").value,
+            tmdb_id: $("qshareEditTMDBID").value,
+            poster_url: $("qshareEditPosterURL").value,
+            source_path: $("qshareEditSourcePath").value
+          })
+        });
+        $("qshareEditMessage").textContent = "资源信息已保存";
+        loadQshareResources();
+      } catch (err) {
+        $("qshareEditMessage").textContent = err.message;
+      }
+    }
+    async function unpublishQshareResource() {
+      const id = $("qshareEditID").value;
+      if (!confirm("确定下架这个 Qshare 资源吗？")) return;
+      try {
+        await api("/api/admin/qshare/resources/" + id + "/unpublish", { method: "POST" });
+        closeQshareModal();
+        loadQshareResources();
+      } catch (err) {
+        $("qshareEditMessage").textContent = err.message;
       }
     }
     function toggleIPBests() {
