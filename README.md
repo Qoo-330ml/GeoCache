@@ -237,11 +237,15 @@ POST /api/qshare/resources/delete
     "total_size": 123456789,
     "files": [
       {
-        "id": "local-file-id",
-        "name": "Interstellar.mkv",
-        "relative_path": "Interstellar/Interstellar.mkv",
+        "id": "DIR:.",
+        "name": "Interstellar",
+        "relative_path": ".",
+        "is_dir": true,
         "size": 123456789,
-        "sha1": "0123456789abcdef0123456789abcdef01234567"
+        "sha1": "",
+        "publisher_115_id": "4577361",
+        "chat_mid": "mid-1",
+        "chat_contact_id": "1182480"
       }
     ]
   }
@@ -249,6 +253,8 @@ POST /api/qshare/resources/delete
 ```
 
 删除 / 详情请求在基础身份字段外增加 `resource_id`。浏览共享中心不再要求当前用户已发布资源；只要 `publish_folder_configured=true` 且 license 仍有效，就允许浏览。`publish_folder_configured=false` 时，状态接口返回 `can_browse=false`，列表返回 `can_browse=false` 和空 `resources`，详情接口返回明确错误。
+
+`files` 可以是文件或文件夹条目。文件夹条目使用 `is_dir=true`，允许 `sha1` 为空；转发时使用该条目的聊天消息 `chat_mid`。
 
 重复发布按同一发布者 `email + instance_id` 内去重：优先使用 `media_type + tmdb_id`；如果 `tmdb_id` 缺失，则使用 `media_type + title + source_path`。对外展示只返回匿名 `owner_label`，不会返回发布者 email 或 instance_id。
 

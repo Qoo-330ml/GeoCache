@@ -214,17 +214,19 @@ type QshareResource struct {
 }
 
 type QshareFile struct {
-	ID            uint      `gorm:"primaryKey" json:"id"`
-	ResourceID    uint      `gorm:"index;not null" json:"-"`
-	Name          string    `gorm:"size:512;not null" json:"name"`
-	Size          int64     `gorm:"not null" json:"size"`
-	SHA1          string    `gorm:"index;size:40;not null" json:"sha1"`
-	RelativePath  string    `gorm:"size:1024;not null" json:"relative_path"`
-	ChatMID       string    `gorm:"index;size:32;not null;default:''" json:"-"`
-	ChatContactID string    `gorm:"size:32;not null;default:''" json:"-"`
-	SeasonNumber  *int      `json:"season_number,omitempty"`
-	EpisodeNumber *int      `json:"episode_number,omitempty"`
-	CreatedAt     time.Time `gorm:"autoCreateTime" json:"created_at"`
+	ID             uint      `gorm:"primaryKey" json:"id"`
+	ResourceID     uint      `gorm:"index;not null" json:"-"`
+	Name           string    `gorm:"size:512;not null" json:"name"`
+	Size           int64     `gorm:"not null" json:"size"`
+	SHA1           string    `gorm:"index;size:40;not null" json:"sha1"`
+	RelativePath   string    `gorm:"size:1024;not null" json:"relative_path"`
+	IsDir          bool      `gorm:"index;not null;default:false" json:"is_dir"`
+	Publisher115ID string    `gorm:"index;size:32;not null;default:''" json:"publisher_115_id"`
+	ChatMID        string    `gorm:"index;size:32;not null;default:''" json:"-"`
+	ChatContactID  string    `gorm:"size:32;not null;default:''" json:"-"`
+	SeasonNumber   *int      `json:"season_number,omitempty"`
+	EpisodeNumber  *int      `json:"episode_number,omitempty"`
+	CreatedAt      time.Time `gorm:"autoCreateTime" json:"created_at"`
 }
 
 type QshareForwardRequest struct {

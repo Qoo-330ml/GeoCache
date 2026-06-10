@@ -32,10 +32,31 @@ func openDatabase(path string) (*gorm.DB, error) {
 	if err := db.AutoMigrate(&ActivationCode{}, &LicenseCheck{}, &ClientInstall{}, &IPReport{}, &IPBest{}, &FeaturePolicy{}, &OrganizerFailedRecordSubmission{}, &OrganizerFailedRecord{}, &QshareResource{}, &QshareFile{}, &QshareForwardRequest{}); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
+	if err := migrateQshareFilePublishers(db); err != nil {
+		return nil, err
+	}
 	if err := seedFeaturePolicies(db); err != nil {
 		return nil, err
 	}
 	return db, nil
+}
+
+func migrateQshareFilePublishers(db *gorm.DB) error {
+	return db.Exec(`
+UPDATE qshare_files
+SET publisher115_id = (
+	SELECT qshare_resources.publisher115_id
+	FROM qshare_resources
+	WHERE qshare_resources.id = qshare_files.resource_id
+)
+WHERE COALESCE(publisher115_id, '') = ''
+  AND EXISTS (
+	SELECT 1
+	FROM qshare_resources
+	WHERE qshare_resources.id = qshare_files.resource_id
+	  AND COALESCE(qshare_resources.publisher115_id, '') != ''
+  );
+`).Error
 }
 
 func seedFeaturePolicies(db *gorm.DB) error {

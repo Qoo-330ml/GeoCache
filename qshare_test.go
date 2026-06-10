@@ -159,6 +159,104 @@ func TestQshareAcceptsStringIDs(t *testing.T) {
 	}
 }
 
+func TestQshareAcceptsFileLevelPublisher(t *testing.T) {
+	a := testQshareApp(t)
+	createActiveQshareLicense(t, a, "owner@example.com")
+	r := testQshareRouter(a)
+
+	body := strings.Replace(sampleQsharePublishBody("owner@example.com", "qmby-owner", 0, "Interstellar"), `"publisher_115_id": "4577361",`, "", 1)
+	body = strings.Replace(body, `"chat_mid": "mid-1"`, `"publisher_115_id": "4577361","chat_mid": "mid-1"`, 1)
+	publish := qshareRequest(t, r, "/api/qshare/resources/publish", body)
+	if publish.Code != http.StatusOK {
+		t.Fatalf("publish code = %d, body = %s", publish.Code, publish.Body.String())
+	}
+	var published struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(publish.Body.Bytes(), &published); err != nil {
+		t.Fatalf("decode publish: %v", err)
+	}
+	if got := published.Resource.Files[0].Publisher115ID; got != "4577361" {
+		t.Fatalf("file publisher_115_id = %q, want 4577361", got)
+	}
+}
+
+func TestQshareAcceptsFolderFileItem(t *testing.T) {
+	a := testQshareApp(t)
+	createActiveQshareLicense(t, a, "owner@example.com")
+	r := testQshareRouter(a)
+
+	body := `{
+		"email": "owner@example.com",
+		"instance_id": "qmby-owner",
+		"beijing_time": "2026-06-09 17:30:00",
+		"publish_folder_configured": true,
+		"resource": {
+			"media_type": "tv",
+			"tmdb_id": 123,
+			"title": "灵魂摆渡·十年",
+			"year": 2026,
+			"poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
+			"source_path": "video/每日更新/tv/国产剧/灵魂摆渡·十年 (2026)",
+			"publisher_115_id": "4577361",
+			"file_count": 1,
+			"total_size": 123456789,
+			"files": [{
+				"id": "DIR:Season 1",
+				"name": "Season 1",
+				"relative_path": "Season 1",
+				"is_dir": true,
+				"size": 123456789,
+				"sha1": "",
+				"publisher_115_id": "4577361",
+				"season_number": 1,
+				"chat_mid": "mid-season-1",
+				"chat_contact_id": "1182480"
+			}]
+		}
+	}`
+	publish := qshareRequest(t, r, "/api/qshare/resources/publish", body)
+	if publish.Code != http.StatusOK {
+		t.Fatalf("publish code = %d, body = %s", publish.Code, publish.Body.String())
+	}
+	var published struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(publish.Body.Bytes(), &published); err != nil {
+		t.Fatalf("decode publish: %v", err)
+	}
+	if len(published.Resource.Files) != 1 || !published.Resource.Files[0].IsDir {
+		t.Fatalf("folder file item missing: %+v", published.Resource.Files)
+	}
+}
+
+func TestMigrateQshareFilePublishersCopiesResourcePublisher(t *testing.T) {
+	a := testQshareApp(t)
+	resource := QshareResource{
+		PublisherEmail: "owner@example.com", InstanceID: "qmby-owner", Publisher115ID: "4577361",
+		SourceID: "source", Title: "Interstellar", MediaType: "movie", TMDBID: "157336",
+		Year: 2014, PosterURL: "poster", SourcePath: "path", FileCount: 1, TotalSize: 1,
+		Status: qshareStatusPublished,
+	}
+	if err := a.db.Create(&resource).Error; err != nil {
+		t.Fatalf("create resource: %v", err)
+	}
+	file := QshareFile{ResourceID: resource.ID, Name: "Interstellar.mkv", Size: 1, SHA1: "ABC", RelativePath: "Interstellar.mkv"}
+	if err := a.db.Create(&file).Error; err != nil {
+		t.Fatalf("create file: %v", err)
+	}
+	if err := migrateQshareFilePublishers(a.db); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	var migrated QshareFile
+	if err := a.db.First(&migrated, file.ID).Error; err != nil {
+		t.Fatalf("load migrated file: %v", err)
+	}
+	if migrated.Publisher115ID != "4577361" {
+		t.Fatalf("migrated publisher_115_id = %q, want 4577361", migrated.Publisher115ID)
+	}
+}
+
 func TestQshareForwardRequestRelay(t *testing.T) {
 	a := testQshareApp(t)
 	createActiveQshareLicense(t, a, "owner@example.com")

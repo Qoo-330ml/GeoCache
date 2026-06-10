@@ -106,15 +106,17 @@ type qshareResourcePayload struct {
 }
 
 type qshareFilePayload struct {
-	ID            any    `json:"id"`
-	Name          string `json:"name"`
-	RelativePath  string `json:"relative_path"`
-	Size          int64  `json:"size"`
-	SHA1          string `json:"sha1"`
-	SeasonNumber  *int   `json:"season_number,omitempty"`
-	EpisodeNumber *int   `json:"episode_number,omitempty"`
-	ChatMID       string `json:"chat_mid"`
-	ChatContactID string `json:"chat_contact_id"`
+	ID             any    `json:"id"`
+	Name           string `json:"name"`
+	RelativePath   string `json:"relative_path"`
+	Size           int64  `json:"size"`
+	SHA1           string `json:"sha1"`
+	IsDir          bool   `json:"is_dir"`
+	Publisher115ID string `json:"publisher_115_id"`
+	SeasonNumber   *int   `json:"season_number,omitempty"`
+	EpisodeNumber  *int   `json:"episode_number,omitempty"`
+	ChatMID        string `json:"chat_mid"`
+	ChatContactID  string `json:"chat_contact_id"`
 }
 
 type qshareResourceResponse struct {
@@ -135,13 +137,15 @@ type qshareResourceResponse struct {
 }
 
 type qshareFileResponse struct {
-	ID            uint   `json:"id"`
-	Name          string `json:"name"`
-	RelativePath  string `json:"relative_path"`
-	Size          int64  `json:"size"`
-	SHA1          string `json:"sha1"`
-	SeasonNumber  *int   `json:"season_number,omitempty"`
-	EpisodeNumber *int   `json:"episode_number,omitempty"`
+	ID             uint   `json:"id"`
+	Name           string `json:"name"`
+	RelativePath   string `json:"relative_path"`
+	Size           int64  `json:"size"`
+	SHA1           string `json:"sha1"`
+	IsDir          bool   `json:"is_dir,omitempty"`
+	Publisher115ID string `json:"publisher_115_id"`
+	SeasonNumber   *int   `json:"season_number,omitempty"`
+	EpisodeNumber  *int   `json:"episode_number,omitempty"`
 }
 
 func (a *app) qshareStatus(c *gin.Context) {
@@ -350,7 +354,7 @@ func (a *app) createQshareForwardRequests(c *gin.Context) {
 			ResourceID: resource.ID, FileID: file.ID,
 			PublisherEmail: resource.PublisherEmail, PublisherInstance: resource.InstanceID,
 			RequesterEmail: identity.Email, RequesterInstance: identity.InstanceID,
-			Publisher115ID: resource.Publisher115ID,
+			Publisher115ID: qshareFilePublisher115ID(file, resource),
 			Target115ID:    targetID, ChatMID: file.ChatMID, ChatContactID: file.ChatContactID,
 			Status: qshareForwardPending, ExpiresAt: now.Add(3 * time.Minute),
 		})
@@ -545,8 +549,16 @@ func normalizeQshareResourcePayload(c *gin.Context, payload qshareResourcePayloa
 		TotalSize:      payload.TotalSize,
 	}
 	if resource.Publisher115ID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "publisher_115_id required"})
-		return resource, nil, false
+		for _, file := range payload.Files {
+			if id := truncate(strings.TrimSpace(file.Publisher115ID), 32); id != "" {
+				resource.Publisher115ID = id
+				break
+			}
+		}
+		if resource.Publisher115ID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "publisher_115_id required"})
+			return resource, nil, false
+		}
 	}
 	if resource.MediaType == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "media_type required"})
@@ -573,16 +585,21 @@ func normalizeQshareResourcePayload(c *gin.Context, payload qshareResourcePayloa
 	var totalSize int64
 	for _, item := range payload.Files {
 		file := QshareFile{
-			Name:          truncate(strings.TrimSpace(item.Name), 512),
-			RelativePath:  truncate(strings.TrimSpace(item.RelativePath), 1024),
-			Size:          item.Size,
-			SHA1:          strings.ToUpper(truncate(strings.TrimSpace(item.SHA1), 40)),
-			ChatMID:       truncate(strings.TrimSpace(item.ChatMID), 32),
-			ChatContactID: truncate(strings.TrimSpace(item.ChatContactID), 32),
-			SeasonNumber:  item.SeasonNumber,
-			EpisodeNumber: item.EpisodeNumber,
+			Name:           truncate(strings.TrimSpace(item.Name), 512),
+			RelativePath:   truncate(strings.TrimSpace(item.RelativePath), 1024),
+			Size:           item.Size,
+			SHA1:           strings.ToUpper(truncate(strings.TrimSpace(item.SHA1), 40)),
+			IsDir:          item.IsDir,
+			Publisher115ID: truncate(strings.TrimSpace(item.Publisher115ID), 32),
+			ChatMID:        truncate(strings.TrimSpace(item.ChatMID), 32),
+			ChatContactID:  truncate(strings.TrimSpace(item.ChatContactID), 32),
+			SeasonNumber:   item.SeasonNumber,
+			EpisodeNumber:  item.EpisodeNumber,
 		}
-		if file.Name == "" || file.Size <= 0 || file.SHA1 == "" || file.RelativePath == "" || file.ChatMID == "" || file.ChatContactID == "" {
+		if file.Publisher115ID == "" {
+			file.Publisher115ID = resource.Publisher115ID
+		}
+		if file.Name == "" || file.RelativePath == "" || file.ChatMID == "" || file.ChatContactID == "" || (!file.IsDir && (file.Size <= 0 || file.SHA1 == "")) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid file metadata"})
 			return resource, nil, false
 		}
@@ -696,17 +713,26 @@ func qshareResourceResponseFromModel(resource QshareResource, includeFiles bool)
 		response.Files = make([]qshareFileResponse, 0, len(resource.Files))
 		for _, file := range resource.Files {
 			response.Files = append(response.Files, qshareFileResponse{
-				ID:            file.ID,
-				Name:          file.Name,
-				RelativePath:  file.RelativePath,
-				Size:          file.Size,
-				SHA1:          file.SHA1,
-				SeasonNumber:  file.SeasonNumber,
-				EpisodeNumber: file.EpisodeNumber,
+				ID:             file.ID,
+				Name:           file.Name,
+				RelativePath:   file.RelativePath,
+				Size:           file.Size,
+				SHA1:           file.SHA1,
+				IsDir:          file.IsDir,
+				Publisher115ID: qshareFilePublisher115ID(file, resource),
+				SeasonNumber:   file.SeasonNumber,
+				EpisodeNumber:  file.EpisodeNumber,
 			})
 		}
 	}
 	return response
+}
+
+func qshareFilePublisher115ID(file QshareFile, resource QshareResource) string {
+	if id := strings.TrimSpace(file.Publisher115ID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(resource.Publisher115ID)
 }
 
 func qshareOwnerLabel(email, instanceID string) string {
