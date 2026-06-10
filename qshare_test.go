@@ -197,7 +197,6 @@ func TestQshareAcceptsFolderFileItem(t *testing.T) {
 			"title": "灵魂摆渡·十年",
 			"year": 2026,
 			"poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
-			"source_path": "video/每日更新/tv/国产剧/灵魂摆渡·十年 (2026)",
 			"publisher_115_id": "4577361",
 			"file_count": 1,
 			"total_size": 123456789,
@@ -205,6 +204,7 @@ func TestQshareAcceptsFolderFileItem(t *testing.T) {
 				"id": "DIR:Season 1",
 				"name": "Season 1",
 				"relative_path": "Season 1",
+				"quality": "S01 24集 · 2160p WEB-DL HDR10+ HEVC",
 				"is_dir": true,
 				"size": 123456789,
 				"sha1": "",
@@ -227,6 +227,12 @@ func TestQshareAcceptsFolderFileItem(t *testing.T) {
 	}
 	if len(published.Resource.Files) != 1 || !published.Resource.Files[0].IsDir {
 		t.Fatalf("folder file item missing: %+v", published.Resource.Files)
+	}
+	if published.Resource.Files[0].Quality != "S01 24集 · 2160p WEB-DL HDR10+ HEVC" {
+		t.Fatalf("quality = %q", published.Resource.Files[0].Quality)
+	}
+	if published.Resource.SourcePath != "" {
+		t.Fatalf("source path should not be returned: %q", published.Resource.SourcePath)
 	}
 }
 

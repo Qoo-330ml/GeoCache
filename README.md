@@ -232,7 +232,6 @@ POST /api/qshare/resources/delete
     "title": "Interstellar",
     "year": 2014,
     "poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
-    "source_path": "115://Movies/Interstellar",
     "file_count": 1,
     "total_size": 123456789,
     "files": [
@@ -256,7 +255,7 @@ POST /api/qshare/resources/delete
 
 `files` 可以是文件或文件夹条目。文件夹条目使用 `is_dir=true`，允许 `sha1` 为空；转发时使用该条目的聊天消息 `chat_mid`。
 
-重复发布按同一发布者 `email + instance_id` 内去重：优先使用 `media_type + tmdb_id`；如果 `tmdb_id` 缺失，则使用 `media_type + title + source_path`。对外展示只返回匿名 `owner_label`，不会返回发布者 email 或 instance_id。
+重复发布按同一发布者 `email + instance_id` 内去重：优先使用 `media_type + tmdb_id`；如果 `tmdb_id` 缺失，则使用 `media_type + title`。对外展示只返回匿名 `owner_label`，不会返回发布者 email、instance_id 或本地发布路径。
 
 ## SQLite 是否够用
 

@@ -98,7 +98,7 @@ type qshareResourcePayload struct {
 	Title          string              `json:"title"`
 	Year           int                 `json:"year"`
 	PosterURL      string              `json:"poster_url"`
-	SourcePath     string              `json:"source_path"`
+	SourcePath     string              `json:"source_path,omitempty"`
 	FileCount      int                 `json:"file_count"`
 	TotalSize      int64               `json:"total_size"`
 	Files          []qshareFilePayload `json:"files"`
@@ -109,6 +109,7 @@ type qshareFilePayload struct {
 	ID             any    `json:"id"`
 	Name           string `json:"name"`
 	RelativePath   string `json:"relative_path"`
+	Quality        string `json:"quality"`
 	Size           int64  `json:"size"`
 	SHA1           string `json:"sha1"`
 	IsDir          bool   `json:"is_dir"`
@@ -128,7 +129,7 @@ type qshareResourceResponse struct {
 	Title          string               `json:"title"`
 	Year           int                  `json:"year"`
 	PosterURL      string               `json:"poster_url"`
-	SourcePath     string               `json:"source_path"`
+	SourcePath     string               `json:"source_path,omitempty"`
 	FileCount      int                  `json:"file_count"`
 	TotalSize      int64                `json:"total_size"`
 	Files          []qshareFileResponse `json:"files,omitempty"`
@@ -140,6 +141,7 @@ type qshareFileResponse struct {
 	ID             uint   `json:"id"`
 	Name           string `json:"name"`
 	RelativePath   string `json:"relative_path"`
+	Quality        string `json:"quality,omitempty"`
 	Size           int64  `json:"size"`
 	SHA1           string `json:"sha1"`
 	IsDir          bool   `json:"is_dir,omitempty"`
@@ -576,17 +578,13 @@ func normalizeQshareResourcePayload(c *gin.Context, payload qshareResourcePayloa
 		c.JSON(http.StatusBadRequest, gin.H{"error": "poster_url required"})
 		return resource, nil, false
 	}
-	if resource.SourcePath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "source_path required"})
-		return resource, nil, false
-	}
-
 	files := make([]QshareFile, 0, len(payload.Files))
 	var totalSize int64
 	for _, item := range payload.Files {
 		file := QshareFile{
 			Name:           truncate(strings.TrimSpace(item.Name), 512),
 			RelativePath:   truncate(strings.TrimSpace(item.RelativePath), 1024),
+			Quality:        truncate(strings.TrimSpace(item.Quality), 512),
 			Size:           item.Size,
 			SHA1:           strings.ToUpper(truncate(strings.TrimSpace(item.SHA1), 40)),
 			IsDir:          item.IsDir,
@@ -638,7 +636,7 @@ func findExistingQshareResource(tx *gorm.DB, identity qshareIdentity, resource Q
 	if resource.TMDBID != "" {
 		tx = tx.Where("tmdb_id = ?", resource.TMDBID)
 	} else {
-		tx = tx.Where("title = ? AND source_path = ?", resource.Title, resource.SourcePath)
+		tx = tx.Where("title = ?", resource.Title)
 	}
 	err := tx.First(&existing).Error
 	if err == nil {
@@ -703,7 +701,6 @@ func qshareResourceResponseFromModel(resource QshareResource, includeFiles bool)
 		Title:          resource.Title,
 		Year:           resource.Year,
 		PosterURL:      resource.PosterURL,
-		SourcePath:     resource.SourcePath,
 		FileCount:      resource.FileCount,
 		TotalSize:      resource.TotalSize,
 		CreatedAt:      resource.CreatedAt,
@@ -716,6 +713,7 @@ func qshareResourceResponseFromModel(resource QshareResource, includeFiles bool)
 				ID:             file.ID,
 				Name:           file.Name,
 				RelativePath:   file.RelativePath,
+				Quality:        file.Quality,
 				Size:           file.Size,
 				SHA1:           file.SHA1,
 				IsDir:          file.IsDir,
