@@ -80,6 +80,51 @@ func TestQsharePublishUpdatesDuplicateAndHidesOwnerIdentity(t *testing.T) {
 	}
 }
 
+func TestQsharePublishTreatsZeroTMDBIDAsMissing(t *testing.T) {
+	a := testQshareApp(t)
+	createActiveQshareLicense(t, a, "user@example.com")
+	r := testQshareRouter(a)
+
+	first := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBodyWithTMDB("user@example.com", "qmby-a", 0, "无 TMDB A", 2026))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first publish code = %d, body = %s", first.Code, first.Body.String())
+	}
+	var firstBody struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(first.Body.Bytes(), &firstBody); err != nil {
+		t.Fatalf("decode first publish: %v", err)
+	}
+
+	second := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBodyWithTMDB("user@example.com", "qmby-a", 0, "无 TMDB B", 2026))
+	if second.Code != http.StatusOK {
+		t.Fatalf("second publish code = %d, body = %s", second.Code, second.Body.String())
+	}
+	var secondBody struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &secondBody); err != nil {
+		t.Fatalf("decode second publish: %v", err)
+	}
+	if secondBody.Resource.ID == firstBody.Resource.ID {
+		t.Fatalf("different zero-tmdb resources should not overwrite each other: first=%+v second=%+v", firstBody.Resource, secondBody.Resource)
+	}
+
+	updated := qshareRequest(t, r, "/api/qshare/resources/publish", sampleQsharePublishBodyWithTMDB("user@example.com", "qmby-a", 0, "无 TMDB A", 2026))
+	if updated.Code != http.StatusOK {
+		t.Fatalf("updated publish code = %d, body = %s", updated.Code, updated.Body.String())
+	}
+	var updatedBody struct {
+		Resource qshareResourceResponse `json:"resource"`
+	}
+	if err := json.Unmarshal(updated.Body.Bytes(), &updatedBody); err != nil {
+		t.Fatalf("decode updated publish: %v", err)
+	}
+	if updatedBody.Resource.ID != firstBody.Resource.ID {
+		t.Fatalf("same zero-tmdb title/year should update original: first=%+v updated=%+v", firstBody.Resource, updatedBody.Resource)
+	}
+}
+
 func TestQshareListDetailAndDelete(t *testing.T) {
 	a := testQshareApp(t)
 	createActiveQshareLicense(t, a, "owner@example.com")
@@ -395,6 +440,15 @@ func qshareForwardPollBody(email, instanceID string, publisher115IDs ...string) 
 
 func sampleQsharePublishBody(email, instanceID string, resourceID uint, title string) string {
 	return sampleQsharePublishBodyWithSource(email, instanceID, resourceID, title, "115://Movies/Interstellar")
+}
+
+func sampleQsharePublishBodyWithTMDB(email, instanceID string, tmdbID int, title string, year int) string {
+	body := sampleQsharePublishBodyWithSource(email, instanceID, 0, title, "115://Movies/"+title)
+	body = strings.Replace(body, `"tmdb_id": 157336`, `"tmdb_id": `+strconv.Itoa(tmdbID), 1)
+	body = strings.Replace(body, `"year": 2014`, `"year": `+strconv.Itoa(year), 1)
+	body = strings.Replace(body, `"name": "Interstellar.mkv"`, `"name": "`+title+`.mkv"`, 1)
+	body = strings.Replace(body, `"relative_path": "Interstellar/Interstellar.mkv"`, `"relative_path": "`+title+`/`+title+`.mkv"`, 1)
+	return body
 }
 
 func sampleQsharePublishBodyWithSource(email, instanceID string, resourceID uint, title, sourcePath string) string {

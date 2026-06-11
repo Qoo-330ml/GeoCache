@@ -661,7 +661,7 @@ func findExistingQshareResource(tx *gorm.DB, identity qshareIdentity, resource Q
 	if resource.TMDBID != "" {
 		tx = tx.Where("tmdb_id = ?", resource.TMDBID)
 	} else {
-		tx = tx.Where("title = ?", resource.Title)
+		tx = tx.Where("title = ? AND year = ?", resource.Title, resource.Year)
 	}
 	err := tx.First(&existing).Error
 	if err == nil {
@@ -678,8 +678,15 @@ func qshareTMDBIDString(value any) string {
 	case nil:
 		return ""
 	case string:
-		return strings.TrimSpace(v)
+		text := strings.TrimSpace(v)
+		if text == "" || text == "0" {
+			return ""
+		}
+		return text
 	case float64:
+		if v <= 0 {
+			return ""
+		}
 		if v == float64(int64(v)) {
 			return fmt.Sprintf("%d", int64(v))
 		}
