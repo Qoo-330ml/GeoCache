@@ -58,6 +58,7 @@ func main() {
 	r.Use(gin.Logger(), gin.Recovery())
 	r.GET("/", func(c *gin.Context) { c.Redirect(http.StatusFound, "/admin") })
 	r.GET("/admin", serveAdmin)
+	r.GET("/admin/mail", serveAdminMail)
 	r.GET("/admin/features", serveAdminFeatures)
 	r.GET("/admin/codes", serveAdminCodes)
 	r.GET("/admin/clients", serveAdminClients)
@@ -82,6 +83,9 @@ func main() {
 	admin.GET("/codes", a.listCodes)
 	admin.POST("/codes", a.createCode)
 	admin.POST("/codes/:id/disable", a.disableCode)
+	admin.GET("/mail-settings", a.getMailSettings)
+	admin.PUT("/mail-settings", a.updateMailSettings)
+	admin.POST("/mail-settings/test", a.testMailSettings)
 	admin.GET("/stats", a.telemetryStats)
 	admin.GET("/clients", a.listClients)
 	admin.GET("/ip-bests", a.listIPBests)
@@ -239,8 +243,12 @@ func (a *app) createCode(c *gin.Context) {
 	}
 	mailSent := false
 	mailError := ""
-	if a.mailer.Configured() {
-		if err := a.mailer.SendActivationCode(email, plainCode, levelDisplayNames[level]); err != nil {
+	mailer, err := a.activeMailer()
+	if err != nil {
+		mailError = err.Error()
+		log.Printf("load mail settings failed: %v", err)
+	} else if mailer.Configured() {
+		if err := mailer.SendActivationCode(email, plainCode, levelDisplayNames[level]); err != nil {
 			mailError = err.Error()
 			log.Printf("send activation code email to %s failed: %v", email, err)
 		} else {
@@ -650,6 +658,7 @@ type smtpMailer struct {
 	Username string
 	Password string
 	From     string
+	sendMail func(addr string, a smtp.Auth, from string, to []string, msg []byte) error
 }
 
 func smtpMailerFromEnv() smtpMailer {
@@ -659,6 +668,7 @@ func smtpMailerFromEnv() smtpMailer {
 		Username: strings.TrimSpace(os.Getenv("SMTP_USER")),
 		Password: strings.TrimSpace(os.Getenv("SMTP_PASSWORD")),
 		From:     strings.TrimSpace(os.Getenv("SMTP_FROM")),
+		sendMail: smtp.SendMail,
 	}
 }
 
@@ -708,7 +718,11 @@ func (m smtpMailer) SendActivationCode(to, code, levelLabel string) error {
 	if strings.TrimSpace(m.Username) != "" {
 		auth = smtp.PlainAuth("", strings.TrimSpace(m.Username), m.Password, strings.TrimSpace(m.Host))
 	}
-	return smtp.SendMail(addr, auth, fromAddress.Address, []string{to}, []byte(message))
+	sendMail := m.sendMail
+	if sendMail == nil {
+		sendMail = smtp.SendMail
+	}
+	return sendMail(addr, auth, fromAddress.Address, []string{to}, []byte(message))
 }
 
 func truncate(value string, max int) string {

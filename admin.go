@@ -16,6 +16,7 @@ func serveAdmin(c *gin.Context) {
 		Description:   "独立授权服务：生成邮箱绑定激活码，Qmby 联网后按邮箱校验会员。",
 		Actions: `
         <button class="secondary" onclick="location.href='/admin/features'">功能权限</button>
+        <button class="secondary" onclick="location.href='/admin/mail'">邮件配置</button>
         <button class="secondary" onclick="location.href='/admin/codes'">激活码</button>
         <button class="secondary" onclick="location.href='/admin/clients'">联网客户端</button>
         <button class="secondary" onclick="location.href='/admin/ip-bests'">IP归属地</button>
@@ -42,6 +43,7 @@ func serveAdmin(c *gin.Context) {
       <div class="panel-body">
         <div class="nav-grid">
           <a class="nav-card" href="/admin/features"><strong>功能权限</strong><span>控制各功能普通用户、会员或关闭状态。</span></a>
+          <a class="nav-card" href="/admin/mail"><strong>邮件配置</strong><span>配置 SMTP，生成激活码后自动发送到绑定邮箱。</span></a>
           <a class="nav-card" href="/admin/codes"><strong>激活码</strong><span>生成、查询和禁用邮箱绑定激活码。</span></a>
           <a class="nav-card" href="/admin/clients"><strong>联网客户端</strong><span>查看客户端实例、版本、活跃和会员状态。</span></a>
           <a class="nav-card" href="/admin/ip-bests"><strong>IP归属地</strong><span>查询客户端上报过的 IP 归属地记录。</span></a>

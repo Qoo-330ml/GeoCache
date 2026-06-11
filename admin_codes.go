@@ -102,7 +102,7 @@ func serveAdminCodes(c *gin.Context) {
         $("generated").innerHTML = "<div class=\"generated\"><div><p>新激活码，只显示一次</p><code>" + esc(data.plain_code) + "</code></div><button class=\"secondary\" onclick=\"navigator.clipboard.writeText('" + esc(data.plain_code) + "')\">复制</button></div>";
         $("email").value = "";
         $("note").value = "";
-        $("message").textContent = "激活码已生成并绑定邮箱";
+        $("message").textContent = data.mail_sent ? "激活码已生成并发送到绑定邮箱" : ("激活码已生成但未发送邮件" + (data.mail_error ? "：" + data.mail_error : ""));
         loadCodes();
       } catch (err) {
         $("message").textContent = err.message;

@@ -43,6 +43,17 @@ type FeaturePolicy struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
+type MailSetting struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	Host      string    `gorm:"size:256" json:"host"`
+	Port      string    `gorm:"size:16" json:"port"`
+	Username  string    `gorm:"size:256" json:"username"`
+	Password  string    `gorm:"size:512" json:"-"`
+	From      string    `gorm:"size:320" json:"from"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
 type FeaturePolicyPayload struct {
 	Label   string `json:"label"`
 	Access  string `json:"access"`

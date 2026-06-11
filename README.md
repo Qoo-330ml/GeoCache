@@ -46,7 +46,7 @@ LICENSE_ED25519_PRIVATE_KEY=base64-ed25519-private-key
 
 ## 支付宝与邮件
 
-购买页使用支付宝电脑网站支付。正式使用前可以在管理页 `/admin` 的“支付与邮件配置”里填写，也可以用环境变量配置：
+购买页使用支付宝电脑网站支付。SMTP 可以在管理页 `/admin/mail` 里填写，也可以用环境变量配置：
 
 ```yaml
 PUBLIC_BASE_URL=https://license.example.com
