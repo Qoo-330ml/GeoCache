@@ -7,7 +7,7 @@
 - 公开购买页：游客填写邮箱并通过支付宝付款购买激活码
 - 管理员生成激活码并绑定邮箱
 - 会员等级：`trial` 7 天试用、`yearly` 年费、`permanent` 永久、`beta` 内测
-- Qmby 联网后通过邮箱校验会员状态
+- Qmby 联网后通过激活码校验会员状态
 - 首次校验时开始计算有效期
 - SQLite 持久化，适合单机 Docker 部署
 - 激活码只保存 SHA-256 哈希，生成后明文只在管理页显示一次
@@ -67,7 +67,7 @@ SMTP_FROM=Qmby License <mailer@example.com>
 /api/pay/alipay/notify
 ```
 
-服务端验签通过后会生成激活码、绑定购买邮箱，并发送到该邮箱。
+服务端验签通过后会生成激活码、绑定购买邮箱，并发送到该邮箱。管理员在 `/admin/codes` 手动生成激活码时，如果已配置 SMTP，也会自动发送激活码邮件。
 
 ## Qmby 校验接口
 
@@ -80,14 +80,14 @@ Content-Type: application/json
 
 ```json
 {
-  "email": "user@example.com",
+  "activation_code": "QMBY-ABCD-EFGH-IJKL-MNOP-QRST",
   "beijing_time": "2026-05-21 20:00:00",
   "instance_id": "qmby-instance-id",
   "qmby_version": "0.0.15"
 }
 ```
 
-这个接口只负责会员校验和在线心跳，不接收归属地字段。IP 归属地请使用下面的 `/api/ip/report` 单独上报。
+这个接口只负责会员校验和在线心跳，不接收归属地字段。云端通过 `activation_code` 查到绑定邮箱，首次成功校验时绑定当前 `instance_id`；后续不同实例使用同一激活码会返回非会员状态。IP 归属地请使用下面的 `/api/ip/report` 单独上报。
 
 响应：
 
@@ -115,7 +115,7 @@ Content-Type: application/json
 }
 ```
 
-服务端会先稳定序列化 `license` 对象，再用 Ed25519 私钥签名这份 JSON 字节；响应中不会再返回顶层裸 `member` / `features` 作为可信授权依据。客户端需要用内置公钥验签，并检查 `email`、`instance_id`、`starts_at`、`expires_at`。
+服务端会先稳定序列化 `license` 对象，再用 Ed25519 私钥签名这份 JSON 字节；响应中不会再返回顶层裸 `member` / `features` 作为可信授权依据。客户端需要用内置公钥验签，并检查云端返回的 `email`、`instance_id`、`starts_at`、`expires_at`。
 
 如果设置了 `LICENSE_API_KEY`，Qmby 请求需要带：
 

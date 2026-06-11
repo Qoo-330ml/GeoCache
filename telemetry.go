@@ -30,11 +30,11 @@ type geoReportPayload struct {
 }
 
 type licenseVerifyRequest struct {
-	Email       string `json:"email"`
-	BeijingTime string `json:"beijing_time"`
-	InstanceID  string `json:"instance_id"`
-	QmbyVersion string `json:"qmby_version"`
-	EmbyServer  string `json:"emby_server"`
+	ActivationCode string `json:"activation_code"`
+	BeijingTime    string `json:"beijing_time"`
+	InstanceID     string `json:"instance_id"`
+	QmbyVersion    string `json:"qmby_version"`
+	EmbyServer     string `json:"emby_server"`
 }
 
 func (a *app) telemetryStats(c *gin.Context) {
@@ -186,14 +186,16 @@ func clientSeenPayload(req licenseVerifyRequest, c *gin.Context) geoReportPayloa
 	return normalizeGeoReport(geoReportPayload{
 		IP:          c.ClientIP(),
 		InstanceID:  req.InstanceID,
-		Email:       req.Email,
 		QmbyVersion: req.QmbyVersion,
 		Provider:    "license",
 	})
 }
 
 func recordClientSeen(tx *gorm.DB, c *gin.Context, req licenseVerifyRequest, code *ActivationCode, member bool, status string, serverNow, clientTime time.Time, seen geoReportPayload) error {
-	email := normalizeEmail(req.Email)
+	email := ""
+	if code != nil {
+		email = normalizeEmail(code.Email)
+	}
 	instanceID := truncate(strings.TrimSpace(req.InstanceID), 128)
 	version := truncate(strings.TrimSpace(req.QmbyVersion), 64)
 	embyServer := truncate(strings.TrimSpace(req.EmbyServer), 128)

@@ -10,8 +10,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
+	"net"
 	"net/http"
+	"net/mail"
+	"net/smtp"
 	"os"
 	"strconv"
 	"strings"
@@ -28,6 +32,7 @@ type app struct {
 	adminPassword string
 	licenseAPIKey string
 	signingKey    ed25519.PrivateKey
+	mailer        smtpMailer
 }
 
 func main() {
@@ -43,6 +48,7 @@ func main() {
 		adminUser:     env("ADMIN_USER", "admin"),
 		adminPassword: env("ADMIN_PASSWORD", "change-me"),
 		licenseAPIKey: strings.TrimSpace(os.Getenv("LICENSE_API_KEY")),
+		mailer:        smtpMailerFromEnv(),
 	}
 	if a.signingKey, err = loadLicenseSigningKey(); err != nil {
 		log.Fatal(err)
@@ -231,7 +237,17 @@ func (a *app) createCode(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"code": code, "plain_code": plainCode})
+	mailSent := false
+	mailError := ""
+	if a.mailer.Configured() {
+		if err := a.mailer.SendActivationCode(email, plainCode, levelDisplayNames[level]); err != nil {
+			mailError = err.Error()
+			log.Printf("send activation code email to %s failed: %v", email, err)
+		} else {
+			mailSent = true
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"code": code, "plain_code": plainCode, "mail_sent": mailSent, "mail_error": mailError})
 }
 
 func (a *app) disableCode(c *gin.Context) {
@@ -310,12 +326,16 @@ func (a *app) verifyLicense(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"member": false, "error": "bad request"})
 		return
 	}
-	email := normalizeEmail(req.Email)
-	if email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"member": false, "error": "email required"})
+	activationCodeHash := hashCode(req.ActivationCode)
+	if activationCodeHash == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"member": false, "error": "activation_code required"})
 		return
 	}
 	instanceID := strings.TrimSpace(req.InstanceID)
+	if instanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"member": false, "error": "instance_id required"})
+		return
+	}
 
 	loc := beijingLocation()
 	serverNow := time.Now().In(loc)
@@ -332,13 +352,14 @@ func (a *app) verifyLicense(c *gin.Context) {
 
 	var code ActivationCode
 	member := false
+	status := "none"
 	err := a.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("email = ? AND status IN ?", email, []string{StatusIssued, StatusActive}).
-			Order("CASE WHEN status = 'active' THEN 0 ELSE 1 END, created_at DESC, id DESC").
+			Where("code_hash = ?", activationCodeHash).
 			First(&code).Error; err != nil {
 			return err
 		}
+		email := normalizeEmail(code.Email)
 
 		if code.ExpiresAt != nil && !code.ExpiresAt.After(serverNow) {
 			code.Status = StatusExpired
@@ -347,7 +368,12 @@ func (a *app) verifyLicense(c *gin.Context) {
 			}
 		}
 
-		if code.Status == StatusIssued {
+		instanceMismatch := code.Status == StatusActive &&
+			strings.TrimSpace(code.LastInstanceID) != "" &&
+			instanceID != "" &&
+			strings.TrimSpace(code.LastInstanceID) != instanceID
+
+		if code.Status == StatusIssued && !instanceMismatch {
 			code.Status = StatusActive
 			code.StartsAt = &serverNow
 			code.FirstSeenAt = &serverNow
@@ -357,12 +383,18 @@ func (a *app) verifyLicense(c *gin.Context) {
 
 		code.LastSeenAt = &serverNow
 		code.LastClientBeijingTime = &clientTime
-		code.LastInstanceID = strings.TrimSpace(req.InstanceID)
+		if !instanceMismatch {
+			code.LastInstanceID = instanceID
+		}
 		code.LastQmbyVersion = strings.TrimSpace(req.QmbyVersion)
 		code.LastEmbyServer = strings.TrimSpace(req.EmbyServer)
 		code.LastIP = c.ClientIP()
 		code.VerifyCount++
-		member = code.Status == StatusActive && (code.ExpiresAt == nil || code.ExpiresAt.After(serverNow))
+		member = !instanceMismatch && code.Status == StatusActive && (code.ExpiresAt == nil || code.ExpiresAt.After(serverNow))
+		status = code.Status
+		if instanceMismatch {
+			status = "instance_mismatch"
+		}
 		if err := tx.Save(&code).Error; err != nil {
 			return err
 		}
@@ -371,7 +403,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 			ActivationCodeID:  code.ID,
 			Email:             email,
 			Level:             code.Level,
-			Status:            code.Status,
+			Status:            status,
 			Member:            member,
 			InstanceID:        strings.TrimSpace(req.InstanceID),
 			QmbyVersion:       strings.TrimSpace(req.QmbyVersion),
@@ -384,13 +416,12 @@ func (a *app) verifyLicense(c *gin.Context) {
 		if err := tx.Create(&check).Error; err != nil {
 			return err
 		}
-		return recordClientSeen(tx, c, req, &code, member, code.Status, serverNow, clientTime, seen)
+		return recordClientSeen(tx, c, req, &code, member, status, serverNow, clientTime, seen)
 	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			_ = a.db.Transaction(func(tx *gorm.DB) error {
 				check := LicenseCheck{
-					Email:             email,
 					Status:            "none",
 					Member:            false,
 					InstanceID:        strings.TrimSpace(req.InstanceID),
@@ -406,19 +437,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 				}
 				return recordClientSeen(tx, c, req, nil, false, "none", serverNow, clientTime, seen)
 			})
-			license := licensePayload{
-				Email:             email,
-				InstanceID:        instanceID,
-				Member:            false,
-				Level:             "",
-				LevelLabel:        "",
-				Status:            licenseStatus(false, "none"),
-				StartsAt:          nil,
-				ExpiresAt:         nil,
-				ServerBeijingTime: serverNow,
-				Features:          featurePolicies,
-			}
-			a.writeSignedLicense(c, license)
+			c.JSON(http.StatusUnauthorized, gin.H{"member": false, "error": "activation code is not active"})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"member": false, "error": err.Error()})
@@ -426,12 +445,12 @@ func (a *app) verifyLicense(c *gin.Context) {
 	}
 
 	license := licensePayload{
-		Email:             email,
+		Email:             normalizeEmail(code.Email),
 		InstanceID:        instanceID,
 		Member:            member,
 		Level:             code.Level,
 		LevelLabel:        levelDisplayNames[code.Level],
-		Status:            licenseStatus(member, code.Status),
+		Status:            licenseStatus(member, status),
 		StartsAt:          code.StartsAt,
 		ExpiresAt:         code.ExpiresAt,
 		ServerBeijingTime: serverNow,
@@ -547,6 +566,9 @@ func generateCode() (string, error) {
 
 func hashCode(code string) string {
 	normalized := strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(code), " ", ""))
+	if normalized == "" {
+		return ""
+	}
 	sum := sha256.Sum256([]byte(normalized))
 	return hex.EncodeToString(sum[:])
 }
@@ -620,6 +642,73 @@ func loadLicenseSigningKey() (ed25519.PrivateKey, error) {
 	default:
 		return nil, errors.New("LICENSE_ED25519_PRIVATE_KEY must decode to 32-byte seed or 64-byte private key")
 	}
+}
+
+type smtpMailer struct {
+	Host     string
+	Port     string
+	Username string
+	Password string
+	From     string
+}
+
+func smtpMailerFromEnv() smtpMailer {
+	return smtpMailer{
+		Host:     strings.TrimSpace(os.Getenv("SMTP_HOST")),
+		Port:     env("SMTP_PORT", "587"),
+		Username: strings.TrimSpace(os.Getenv("SMTP_USER")),
+		Password: strings.TrimSpace(os.Getenv("SMTP_PASSWORD")),
+		From:     strings.TrimSpace(os.Getenv("SMTP_FROM")),
+	}
+}
+
+func (m smtpMailer) Configured() bool {
+	return strings.TrimSpace(m.Host) != "" && strings.TrimSpace(m.From) != ""
+}
+
+func (m smtpMailer) SendActivationCode(to, code, levelLabel string) error {
+	to = normalizeEmail(to)
+	if !validEmail(to) {
+		return errors.New("invalid email")
+	}
+	from := strings.TrimSpace(m.From)
+	fromAddress, err := mail.ParseAddress(from)
+	if err != nil {
+		return fmt.Errorf("invalid SMTP_FROM: %w", err)
+	}
+	toAddress := mail.Address{Address: to}
+	addr := net.JoinHostPort(strings.TrimSpace(m.Host), strings.TrimSpace(m.Port))
+	if strings.TrimSpace(m.Port) == "" {
+		addr = net.JoinHostPort(strings.TrimSpace(m.Host), "587")
+	}
+	subject := "Qmby Activation Code"
+	if strings.TrimSpace(levelLabel) == "" {
+		levelLabel = "会员"
+	}
+	body := strings.Join([]string{
+		"你的 Qmby 激活码如下：",
+		"",
+		code,
+		"",
+		"套餐：" + levelLabel,
+		"",
+		"请在 Qmby 的“激活码验证”页面输入该激活码完成绑定。",
+		"如果不是你本人操作，请忽略这封邮件。",
+	}, "\r\n")
+	message := strings.Join([]string{
+		"From: " + fromAddress.String(),
+		"To: " + toAddress.String(),
+		"Subject: " + subject,
+		"MIME-Version: 1.0",
+		"Content-Type: text/plain; charset=UTF-8",
+		"",
+		body,
+	}, "\r\n")
+	var auth smtp.Auth
+	if strings.TrimSpace(m.Username) != "" {
+		auth = smtp.PlainAuth("", strings.TrimSpace(m.Username), m.Password, strings.TrimSpace(m.Host))
+	}
+	return smtp.SendMail(addr, auth, fromAddress.Address, []string{to}, []byte(message))
 }
 
 func truncate(value string, max int) string {

@@ -31,7 +31,7 @@ Use the same API key validation behavior as the existing license verification en
 
 | Field | Type | Required | Description |
 | --- | --- | --- | --- |
-| `email` | string | yes | User email configured in Qmby profile. |
+| `email` | string | yes | Member email from the signed license returned by activation-code verification. |
 | `beijing_time` | string | yes | Client-side Beijing time, format `YYYY-MM-DD HH:mm:ss`. |
 | `instance_id` | string | yes | Stable Qmby instance ID. |
 | `qmby_version` | string | no | Qmby version string. |
@@ -100,4 +100,3 @@ Recommended status codes:
 5. Return `count` as the number of non-empty record lines accepted.
 
 Do not require every line to be perfectly parseable if the raw text can be stored. Prefer accepting the submission and storing malformed lines with an error marker, because Qmby clears local pending records after a successful response.
-
