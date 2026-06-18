@@ -64,6 +64,40 @@ func TestVerifyLicenseReturnsSignedMemberLicense(t *testing.T) {
 	}
 }
 
+func TestMigrateLegacyCodesToBeta(t *testing.T) {
+	db, err := openDatabase(filepath.Join(t.TempDir(), "license.db"))
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	expiresAt := time.Now().Add(-time.Hour)
+	codes := []ActivationCode{
+		{CodeHash: hashCode("QMBY-LEGACY-0001"), CodePrefix: "QMBY-LEG", Email: "yearly@example.com", Level: LevelYearly, DurationDays: 365, Status: StatusExpired, ExpiresAt: &expiresAt},
+		{CodeHash: hashCode("QMBY-LEGACY-0002"), CodePrefix: "QMBY-LEG", Email: "permanent@example.com", Level: LevelPermanent, DurationDays: 0, Status: StatusActive},
+		{CodeHash: hashCode("QMBY-LEGACY-0003"), CodePrefix: "QMBY-LEG", Email: "disabled@example.com", Level: LevelTrial, DurationDays: 7, Status: StatusDisabled, ExpiresAt: &expiresAt},
+	}
+	if err := db.Create(&codes).Error; err != nil {
+		t.Fatalf("create legacy codes: %v", err)
+	}
+	if err := migrateLegacyCodesToBeta(db); err != nil {
+		t.Fatalf("migrate legacy codes: %v", err)
+	}
+	var migrated []ActivationCode
+	if err := db.Order("email ASC").Find(&migrated).Error; err != nil {
+		t.Fatalf("load migrated codes: %v", err)
+	}
+	for _, code := range migrated {
+		if code.Level != LevelBeta || code.DurationDays != 0 || code.ExpiresAt != nil {
+			t.Fatalf("code was not migrated to permanent beta: %+v", code)
+		}
+		if code.Email == "disabled@example.com" && code.Status != StatusDisabled {
+			t.Fatalf("disabled code status = %q, want %q", code.Status, StatusDisabled)
+		}
+		if code.Email != "disabled@example.com" && code.Status != StatusActive {
+			t.Fatalf("legacy code status = %q, want %q", code.Status, StatusActive)
+		}
+	}
+}
+
 func TestSignedLicenseClientRejectsEmailMismatch(t *testing.T) {
 	a, publicKey := testLicenseApp(t)
 	plainCode := "QMBY-TEST-0002"

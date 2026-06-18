@@ -547,6 +547,10 @@ func normalizeFeatureAccess(access string) string {
 	switch strings.ToLower(strings.TrimSpace(access)) {
 	case FeatureAccessFree:
 		return FeatureAccessFree
+	case FeatureAccessPlus:
+		return FeatureAccessPlus
+	case FeatureAccessPro:
+		return FeatureAccessPro
 	case FeatureAccessDisabled:
 		return FeatureAccessDisabled
 	default:

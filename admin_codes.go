@@ -27,9 +27,8 @@ func serveAdminCodes(c *gin.Context) {
           <div>
             <label>会员等级</label>
             <select id="level">
-              <option value="trial">7天试用</option>
-              <option value="yearly">年费会员</option>
-              <option value="permanent">永久会员</option>
+              <option value="plus">Plus会员</option>
+              <option value="pro">Pro会员</option>
               <option value="beta">内测会员</option>
             </select>
           </div>
@@ -47,7 +46,7 @@ func serveAdminCodes(c *gin.Context) {
         <div class="filters">
           <div><label>搜索</label><input id="search" placeholder="邮箱、前缀或备注" oninput="loadCodesDebounced()" /></div>
           <div><label>状态</label><select id="status" onchange="loadCodes()"><option value="">全部</option><option value="issued">待激活</option><option value="active">已激活</option><option value="disabled">已禁用</option><option value="expired">已过期</option></select></div>
-          <div><label>等级</label><select id="filterLevel" onchange="loadCodes()"><option value="">全部</option><option value="trial">7天试用</option><option value="yearly">年费</option><option value="permanent">永久</option><option value="beta">内测</option></select></div>
+          <div><label>等级</label><select id="filterLevel" onchange="loadCodes()"><option value="">全部</option><option value="plus">Plus</option><option value="pro">Pro</option><option value="beta">内测</option><option value="trial">旧试用</option><option value="yearly">旧年费</option><option value="permanent">旧永久</option></select></div>
           <button class="secondary" onclick="loadCodes()">查询</button>
         </div>
         <div style="height:14px"></div>
@@ -58,7 +57,7 @@ func serveAdminCodes(c *gin.Context) {
       </div>
     </section>`,
 		Script: `
-    const levelLabels = { trial: "7天试用", yearly: "年费会员", permanent: "永久会员", beta: "内测会员" };
+    const levelLabels = { plus: "Plus会员", pro: "Pro会员", beta: "内测会员", trial: "旧试用", yearly: "旧年费会员", permanent: "旧永久Pro会员" };
     const statusLabels = { issued: "待激活", active: "已激活", disabled: "已禁用", expired: "已过期" };
     let timer = 0;
     function loadCodesDebounced() {

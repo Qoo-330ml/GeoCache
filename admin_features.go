@@ -29,7 +29,7 @@ func serveAdminFeatures(c *gin.Context) {
       </div>
     </section>`,
 		Script: `
-    const featureAccessLabels = { free: "普通可用", member: "会员可用", disabled: "关闭功能" };
+    const featureAccessLabels = { free: "普通可用", plus: "Plus 可用", pro: "Pro 可用", member: "会员可用", disabled: "关闭功能" };
     let features = [];
     async function loadFeatures() {
       try {

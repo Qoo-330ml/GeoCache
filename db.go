@@ -32,6 +32,9 @@ func openDatabase(path string) (*gorm.DB, error) {
 	if err := db.AutoMigrate(&ActivationCode{}, &LicenseCheck{}, &ClientInstall{}, &IPReport{}, &IPBest{}, &FeaturePolicy{}, &MailSetting{}, &OrganizerFailedRecordSubmission{}, &OrganizerFailedRecord{}, &QshareResource{}, &QshareFile{}, &QshareForwardRequest{}); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
+	if err := migrateLegacyCodesToBeta(db); err != nil {
+		return nil, err
+	}
 	if err := migrateQshareFilePublishers(db); err != nil {
 		return nil, err
 	}
@@ -39,6 +42,17 @@ func openDatabase(path string) (*gorm.DB, error) {
 		return nil, err
 	}
 	return db, nil
+}
+
+func migrateLegacyCodesToBeta(db *gorm.DB) error {
+	return db.Exec(`
+UPDATE activation_codes
+SET level = ?,
+    duration_days = 0,
+    expires_at = NULL,
+    status = CASE WHEN status = ? THEN ? ELSE status END
+WHERE level IN (?, ?, ?);
+`, LevelBeta, StatusExpired, StatusActive, LevelTrial, LevelYearly, LevelPermanent).Error
 }
 
 func migrateQshareFilePublishers(db *gorm.DB) error {
@@ -60,15 +74,11 @@ WHERE COALESCE(publisher115_id, '') = ''
 }
 
 func seedFeaturePolicies(db *gorm.DB) error {
+	if err := db.Where("key = ?", "pt_subscription").Delete(&FeaturePolicy{}).Error; err != nil {
+		return fmt.Errorf("remove legacy feature policy: %w", err)
+	}
 	for _, policy := range defaultFeaturePolicies {
-		var count int64
-		if err := db.Model(&FeaturePolicy{}).Where("key = ?", policy.Key).Count(&count).Error; err != nil {
-			return fmt.Errorf("check feature policy %s: %w", policy.Key, err)
-		}
-		if count > 0 {
-			continue
-		}
-		if err := db.Create(&policy).Error; err != nil {
+		if err := db.Where("key = ?", policy.Key).Assign(policy).FirstOrCreate(&policy).Error; err != nil {
 			return fmt.Errorf("seed feature policy %s: %w", policy.Key, err)
 		}
 	}

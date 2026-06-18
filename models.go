@@ -6,6 +6,8 @@ const (
 	LevelTrial     = "trial"
 	LevelYearly    = "yearly"
 	LevelPermanent = "permanent"
+	LevelPlus      = "plus"
+	LevelPro       = "pro"
 	LevelBeta      = "beta"
 
 	StatusIssued   = "issued"
@@ -15,6 +17,8 @@ const (
 
 	FeatureAccessFree     = "free"
 	FeatureAccessMember   = "member"
+	FeatureAccessPlus     = "plus"
+	FeatureAccessPro      = "pro"
 	FeatureAccessDisabled = "disabled"
 )
 
@@ -22,13 +26,17 @@ var levelDurationDays = map[string]int{
 	LevelTrial:     7,
 	LevelYearly:    365,
 	LevelPermanent: 0,
+	LevelPlus:      365,
+	LevelPro:       365,
 	LevelBeta:      0,
 }
 
 var levelDisplayNames = map[string]string{
 	LevelTrial:     "试用会员",
 	LevelYearly:    "年费会员",
-	LevelPermanent: "永久会员",
+	LevelPermanent: "永久 Pro 会员",
+	LevelPlus:      "Plus 会员",
+	LevelPro:       "Pro 会员",
 	LevelBeta:      "内测会员",
 }
 
@@ -62,11 +70,15 @@ type FeaturePolicyPayload struct {
 
 var defaultFeaturePolicies = []FeaturePolicy{
 	{Key: "account", Label: "号池管理", Access: FeatureAccessFree, Enabled: true, SortOrder: 10},
-	{Key: "strm_task", Label: "Strm 任务", Access: FeatureAccessFree, Enabled: true, SortOrder: 20},
-	{Key: "pt_subscription", Label: "PT 订阅", Access: FeatureAccessMember, Enabled: true, SortOrder: 30},
-	{Key: "upload_monitor", Label: "文件监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 40},
-	{Key: "organizer", Label: "识别整理", Access: FeatureAccessMember, Enabled: true, SortOrder: 50},
-	{Key: "playback_monitor", Label: "播放监控", Access: FeatureAccessMember, Enabled: true, SortOrder: 60},
+	{Key: "account_guest", Label: "访客账号", Access: FeatureAccessPro, Enabled: true, SortOrder: 20},
+	{Key: "coplay_copy", Label: "同播复制", Access: FeatureAccessPlus, Enabled: true, SortOrder: 30},
+	{Key: "strm_task", Label: "Strm 任务", Access: FeatureAccessFree, Enabled: true, SortOrder: 40},
+	{Key: "resource_subscription", Label: "资源订阅", Access: FeatureAccessPlus, Enabled: true, SortOrder: 50},
+	{Key: "qshare", Label: "Qshare", Access: FeatureAccessPlus, Enabled: true, SortOrder: 60},
+	{Key: "upload_monitor", Label: "文件监控", Access: FeatureAccessFree, Enabled: true, SortOrder: 70},
+	{Key: "organizer", Label: "识别整理", Access: FeatureAccessFree, Enabled: true, SortOrder: 80},
+	{Key: "cloud_organizer", Label: "云端整理", Access: FeatureAccessPro, Enabled: true, SortOrder: 90},
+	{Key: "playback_monitor", Label: "播放监控", Access: FeatureAccessPro, Enabled: true, SortOrder: 100},
 }
 
 type ActivationCode struct {
