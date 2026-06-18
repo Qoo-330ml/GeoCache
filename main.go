@@ -191,9 +191,10 @@ func (a *app) listCodes(c *gin.Context) {
 
 func (a *app) createCode(c *gin.Context) {
 	var req struct {
-		Email string `json:"email"`
-		Level string `json:"level"`
-		Note  string `json:"note"`
+		Email        string `json:"email"`
+		Level        string `json:"level"`
+		DurationDays *int   `json:"duration_days"`
+		Note         string `json:"note"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
@@ -209,6 +210,13 @@ func (a *app) createCode(c *gin.Context) {
 	if !ok {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid level"})
 		return
+	}
+	if req.DurationDays != nil {
+		if !allowedActivationDurations[*req.DurationDays] {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid duration"})
+			return
+		}
+		durationDays = *req.DurationDays
 	}
 
 	var existing int64

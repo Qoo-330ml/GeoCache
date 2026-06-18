@@ -40,6 +40,13 @@ var levelDisplayNames = map[string]string{
 	LevelBeta:      "内测会员",
 }
 
+var allowedActivationDurations = map[int]bool{
+	7:   true,
+	30:  true,
+	365: true,
+	0:   true,
+}
+
 type FeaturePolicy struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
 	Key       string    `gorm:"uniqueIndex;size:64;not null" json:"key"`

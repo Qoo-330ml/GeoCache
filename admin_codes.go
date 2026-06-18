@@ -32,6 +32,15 @@ func serveAdminCodes(c *gin.Context) {
               <option value="beta">内测会员</option>
             </select>
           </div>
+          <div>
+            <label>有效期</label>
+            <select id="durationDays">
+              <option value="7">7 天</option>
+              <option value="30">1 月</option>
+              <option value="365">1 年</option>
+              <option value="0">永久</option>
+            </select>
+          </div>
           <div><label>备注</label><input id="note" placeholder="来源、订单号或说明" /></div>
           <button onclick="createCode()">生成</button>
         </div>
@@ -51,13 +60,14 @@ func serveAdminCodes(c *gin.Context) {
         </div>
         <div style="height:14px"></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>邮箱</th><th>等级</th><th>状态</th><th>前缀</th><th>开始</th><th>到期</th><th>最近联网</th><th>客户端数</th><th>操作</th></tr></thead>
-          <tbody id="rows"><tr><td colspan="9">加载中...</td></tr></tbody>
+          <thead><tr><th>邮箱</th><th>等级</th><th>有效期</th><th>状态</th><th>前缀</th><th>开始</th><th>到期</th><th>最近联网</th><th>客户端数</th><th>操作</th></tr></thead>
+          <tbody id="rows"><tr><td colspan="10">加载中...</td></tr></tbody>
         </table></div>
       </div>
     </section>`,
 		Script: `
     const levelLabels = { plus: "Plus会员", pro: "Pro会员", beta: "内测会员", trial: "旧试用", yearly: "旧年费会员", permanent: "旧永久Pro会员" };
+    const durationLabels = { 7: "7 天", 30: "1 月", 365: "1 年", 0: "永久" };
     const statusLabels = { issued: "待激活", active: "已激活", disabled: "已禁用", expired: "已过期" };
     let timer = 0;
     function loadCodesDebounced() {
@@ -77,6 +87,7 @@ func serveAdminCodes(c *gin.Context) {
           "<tr>" +
             "<td><strong>" + esc(row.email) + "</strong>" + (row.note ? "<div class=\"note\">" + esc(row.note) + "</div>" : "") + "</td>" +
             "<td>" + (levelLabels[row.level] || row.level) + "</td>" +
+            "<td>" + (durationLabels[row.duration_days] || (row.duration_days ? (row.duration_days + " 天") : "永久")) + "</td>" +
             "<td><span class=\"badge " + row.status + "\">" + (statusLabels[row.status] || row.status) + "</span></td>" +
             "<td><code>" + esc(row.code_prefix) + "</code></td>" +
             "<td>" + fmt(row.starts_at) + "</td>" +
@@ -84,10 +95,10 @@ func serveAdminCodes(c *gin.Context) {
             "<td>" + fmt(row.last_seen_at) + "</td>" +
             "<td>" + ((data.client_counts || {})[row.id] || 0) + "</td>" +
             "<td>" + (row.status !== "disabled" ? "<button class=\"danger\" onclick=\"disableCode(" + row.id + ")\">禁用</button>" : "") + "</td>" +
-          "</tr>").join("") || "<tr><td colspan=\"9\">暂无激活码</td></tr>";
+          "</tr>").join("") || "<tr><td colspan=\"10\">暂无激活码</td></tr>";
       } catch (err) {
         if (err.message === "unauthorized") { showLogin(); return; }
-        $("rows").innerHTML = "<tr><td colspan=\"9\">" + esc(err.message) + "</td></tr>";
+        $("rows").innerHTML = "<tr><td colspan=\"10\">" + esc(err.message) + "</td></tr>";
       }
     }
     async function createCode() {
@@ -96,7 +107,7 @@ func serveAdminCodes(c *gin.Context) {
       try {
         const data = await api("/api/admin/codes", {
           method: "POST",
-          body: JSON.stringify({ email: $("email").value, level: $("level").value, note: $("note").value })
+          body: JSON.stringify({ email: $("email").value, level: $("level").value, duration_days: Number($("durationDays").value), note: $("note").value })
         });
         $("generated").innerHTML = "<div class=\"generated\"><div><p>新激活码，只显示一次</p><code>" + esc(data.plain_code) + "</code></div><button class=\"secondary\" onclick=\"navigator.clipboard.writeText('" + esc(data.plain_code) + "')\">复制</button></div>";
         $("email").value = "";
