@@ -4,13 +4,13 @@
 
 ## 功能
 
-- 公开购买页：游客填写邮箱并通过支付宝付款购买激活码
+- 手动授权流程：收款后由管理员在后台创建激活码并发送给用户
 - 管理员生成激活码并绑定邮箱
 - 管理员生成激活码时可选择会员等级，并设置有效期：7 天、1 月、1 年、永久
 - Qmby 联网后通过激活码校验会员状态
 - 首次校验时开始计算有效期
 - SQLite 持久化，适合单机 Docker 部署
-- 激活码只保存 SHA-256 哈希，生成后明文只在管理页显示一次
+- 激活码保存 SHA-256 哈希，并为管理页完整展示保留新生成激活码的明文
 - 记录最近联网时间、客户端北京时间、实例 ID、Qmby 版本、IP、校验次数
 - 统计累计联网安装数、最近 10 分钟活跃客户端数、24 小时校验次数
 - 独立 IP 归属地上报与查询接口
@@ -27,12 +27,6 @@ docker compose up -d --build
 http://localhost:2090/admin
 ```
 
-购买页：
-
-```text
-http://localhost:2090/buy
-```
-
 默认账号密码在 `docker-compose.yml` 中配置：
 
 ```yaml
@@ -44,16 +38,13 @@ LICENSE_ED25519_PRIVATE_KEY=base64-ed25519-private-key
 请部署前改掉 `ADMIN_PASSWORD`。
 `LICENSE_ED25519_PRIVATE_KEY` 必须从服务端环境变量或密钥管理注入，值为 base64 编码的 Ed25519 64 字节私钥或 32 字节 seed；客户端构建时需要内置对应的 base64 Ed25519 公钥。
 
-## 支付宝与邮件
+## 手动收款与邮件
 
-购买页使用支付宝电脑网站支付。SMTP 可以在管理页 `/admin/mail` 里填写，也可以用环境变量配置：
+当前版本不内置支付网关。建议流程是：在 Qmby 或你的说明页展示收款二维码和联系邮箱，用户付款后把订单号发送到指定邮箱；管理员确认到账后在 `/admin/codes` 手动创建激活码。
+
+SMTP 可以在管理页 `/admin/mail` 里填写，也可以用环境变量配置：
 
 ```yaml
-PUBLIC_BASE_URL=https://license.example.com
-ALIPAY_GATEWAY=https://openapi.alipay.com/gateway.do
-ALIPAY_APP_ID=你的应用 AppID
-ALIPAY_PRIVATE_KEY=应用私钥
-ALIPAY_PUBLIC_KEY=支付宝公钥
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587
 SMTP_USER=mailer@example.com
@@ -61,13 +52,7 @@ SMTP_PASSWORD=邮箱 SMTP 密码
 SMTP_FROM=Qmby License <mailer@example.com>
 ```
 
-付款成功后，支付宝会请求：
-
-```text
-/api/pay/alipay/notify
-```
-
-服务端验签通过后会生成激活码、绑定购买邮箱，并发送到该邮箱。管理员在 `/admin/codes` 手动生成激活码时，如果已配置 SMTP，也会自动发送激活码邮件。
+管理员在 `/admin/codes` 手动生成激活码时，如果已配置 SMTP，会自动发送激活码邮件。
 
 ## Qmby 校验接口
 

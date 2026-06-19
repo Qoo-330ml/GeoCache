@@ -13,7 +13,7 @@ func serveAdminCodes(c *gin.Context) {
 		BrandTitle:    "Qmby License",
 		BrandSubtitle: "激活码管理",
 		Heading:       "激活码管理",
-		Description:   "生成、查询和禁用邮箱绑定激活码。",
+		Description:   "生成、查询、禁用和删除邮箱绑定激活码。",
 		Actions: `
         <button class="secondary" onclick="location.href='/admin'">返回概览</button>
         <button class="secondary" onclick="refreshCodes()">刷新</button>
@@ -53,14 +53,14 @@ func serveAdminCodes(c *gin.Context) {
       <div class="panel-head"><h2>激活码列表</h2></div>
       <div class="panel-body">
         <div class="filters">
-          <div><label>搜索</label><input id="search" placeholder="邮箱、前缀或备注" oninput="loadCodesDebounced()" /></div>
+          <div><label>搜索</label><input id="search" placeholder="邮箱、激活码或备注" oninput="loadCodesDebounced()" /></div>
           <div><label>状态</label><select id="status" onchange="loadCodes()"><option value="">全部</option><option value="issued">待激活</option><option value="active">已激活</option><option value="disabled">已禁用</option><option value="expired">已过期</option></select></div>
           <div><label>等级</label><select id="filterLevel" onchange="loadCodes()"><option value="">全部</option><option value="plus">Plus</option><option value="pro">Pro</option><option value="beta">内测</option><option value="trial">旧试用</option><option value="yearly">旧年费</option><option value="permanent">旧永久</option></select></div>
           <button class="secondary" onclick="loadCodes()">查询</button>
         </div>
         <div style="height:14px"></div>
         <div class="table-wrap"><table>
-          <thead><tr><th>邮箱</th><th>等级</th><th>有效期</th><th>状态</th><th>前缀</th><th>开始</th><th>到期</th><th>最近联网</th><th>客户端数</th><th>操作</th></tr></thead>
+          <thead><tr><th>邮箱</th><th>等级</th><th>有效期</th><th>状态</th><th>激活码</th><th>开始</th><th>到期</th><th>最近联网</th><th>客户端数</th><th>操作</th></tr></thead>
           <tbody id="rows"><tr><td colspan="10">加载中...</td></tr></tbody>
         </table></div>
       </div>
@@ -89,12 +89,12 @@ func serveAdminCodes(c *gin.Context) {
             "<td>" + (levelLabels[row.level] || row.level) + "</td>" +
             "<td>" + (durationLabels[row.duration_days] || (row.duration_days ? (row.duration_days + " 天") : "永久")) + "</td>" +
             "<td><span class=\"badge " + row.status + "\">" + (statusLabels[row.status] || row.status) + "</span></td>" +
-            "<td><code>" + esc(row.code_prefix) + "</code></td>" +
+            "<td><code>" + esc(row.plain_code || row.code_prefix) + "</code>" + (!row.plain_code ? "<div class=\"note\">旧数据仅有前缀</div>" : "") + "</td>" +
             "<td>" + fmt(row.starts_at) + "</td>" +
             "<td>" + fmt(row.expires_at, !row.expires_at) + "</td>" +
             "<td>" + fmt(row.last_seen_at) + "</td>" +
             "<td>" + ((data.client_counts || {})[row.id] || 0) + "</td>" +
-            "<td>" + (row.status !== "disabled" ? "<button class=\"danger\" onclick=\"disableCode(" + row.id + ")\">禁用</button>" : "") + "</td>" +
+            "<td>" + (row.status !== "disabled" ? "<button class=\"danger\" onclick=\"disableCode(" + row.id + ")\">禁用</button> " : "") + "<button class=\"danger\" onclick=\"deleteCode(" + row.id + ")\">删除</button></td>" +
           "</tr>").join("") || "<tr><td colspan=\"10\">暂无激活码</td></tr>";
       } catch (err) {
         if (err.message === "unauthorized") { showLogin(); return; }
@@ -122,6 +122,15 @@ func serveAdminCodes(c *gin.Context) {
       if (!confirm("确定禁用这个激活码吗？")) return;
       try {
         await api("/api/admin/codes/" + id + "/disable", { method: "POST" });
+        loadCodes();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+    async function deleteCode(id) {
+      if (!confirm("确定永久删除这个激活码吗？\n\n此操作不可撤销。")) return;
+      try {
+        await api("/api/admin/codes/" + id, { method: "DELETE" });
         loadCodes();
       } catch (err) {
         alert(err.message);

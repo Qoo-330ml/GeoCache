@@ -66,6 +66,7 @@ func main() {
 	r.GET("/admin/qshare", serveAdminQshare)
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	r.POST("/api/license/verify", a.requireLicenseKey(), a.verifyLicense)
+	r.POST("/api/license/trial", a.requireLicenseKey(), a.requestTrialCode)
 	r.POST("/api/ip/report", a.requireLicenseKey(), a.reportIP)
 	r.POST("/api/organizer/failed-records", a.requireLicenseKey(), a.submitOrganizerFailedRecords)
 	r.POST("/api/qshare/status", a.requireLicenseKey(), a.qshareStatus)
@@ -83,6 +84,7 @@ func main() {
 	admin.GET("/codes", a.listCodes)
 	admin.POST("/codes", a.createCode)
 	admin.POST("/codes/:id/disable", a.disableCode)
+	admin.DELETE("/codes/:id", a.deleteCode)
 	admin.GET("/mail-settings", a.getMailSettings)
 	admin.PUT("/mail-settings", a.updateMailSettings)
 	admin.POST("/mail-settings/test", a.testMailSettings)
@@ -150,7 +152,7 @@ func (a *app) listCodes(c *gin.Context) {
 	tx := a.db.Model(&ActivationCode{})
 	if search := strings.TrimSpace(c.Query("search")); search != "" {
 		like := "%" + strings.ToLower(search) + "%"
-		tx = tx.Where("LOWER(email) LIKE ? OR code_prefix LIKE ? OR note LIKE ?", like, like, like)
+		tx = tx.Where("LOWER(email) LIKE ? OR LOWER(plain_code) LIKE ? OR code_prefix LIKE ? OR note LIKE ?", like, like, like, like)
 	}
 	if status := strings.TrimSpace(c.Query("status")); status != "" {
 		tx = tx.Where("status = ?", status)
@@ -238,6 +240,7 @@ func (a *app) createCode(c *gin.Context) {
 	}
 	code := &ActivationCode{
 		CodeHash:     hashCode(plainCode),
+		PlainCode:    plainCode,
 		CodePrefix:   codePrefix(plainCode),
 		Email:        email,
 		Level:        level,
@@ -266,6 +269,82 @@ func (a *app) createCode(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"code": code, "plain_code": plainCode, "mail_sent": mailSent, "mail_error": mailError})
 }
 
+func (a *app) requestTrialCode(c *gin.Context) {
+	var req struct {
+		Email       string `json:"email"`
+		InstanceID  string `json:"instance_id"`
+		QmbyVersion string `json:"qmby_version"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "bad request"})
+		return
+	}
+	email := normalizeEmail(req.Email)
+	if !validEmail(email) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid email"})
+		return
+	}
+	instanceID := strings.TrimSpace(req.InstanceID)
+	if instanceID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "instance_id required"})
+		return
+	}
+	trialNote := "trial_instance:" + instanceID
+
+	var code ActivationCode
+	err := a.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("note = ?", trialNote).
+			First(&code).Error; err == nil {
+			if code.Email != email {
+				return errors.New("this device has already requested a trial")
+			}
+			return nil
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+
+		var existing int64
+		if err := tx.Model(&ActivationCode{}).
+			Where("email = ? AND status IN ?", email, []string{StatusIssued, StatusActive}).
+			Count(&existing).Error; err != nil {
+			return err
+		}
+		if existing > 0 {
+			return errors.New("email already has an available license")
+		}
+
+		plainCode, err := generateCode()
+		if err != nil {
+			return err
+		}
+		code = ActivationCode{
+			CodeHash:     hashCode(plainCode),
+			PlainCode:    plainCode,
+			CodePrefix:   codePrefix(plainCode),
+			Email:        email,
+			Level:        LevelPlus,
+			DurationDays: 7,
+			Status:       StatusIssued,
+			Note:         trialNote,
+		}
+		return tx.Create(&code).Error
+	})
+	if err != nil {
+		status := http.StatusInternalServerError
+		if err.Error() == "email already has an available license" || err.Error() == "this device has already requested a trial" {
+			status = http.StatusConflict
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"activation_code": code.PlainCode,
+		"level":           code.Level,
+		"duration_days":   code.DurationDays,
+	})
+}
+
 func (a *app) disableCode(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
@@ -277,6 +356,24 @@ func (a *app) disableCode(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "disabled"})
+}
+
+func (a *app) deleteCode(c *gin.Context) {
+	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || id == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
+		return
+	}
+	result := a.db.Delete(&ActivationCode{}, id)
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": result.Error.Error()})
+		return
+	}
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "code not found"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
 func (a *app) listFeatures(c *gin.Context) {

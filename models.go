@@ -91,6 +91,7 @@ var defaultFeaturePolicies = []FeaturePolicy{
 type ActivationCode struct {
 	ID                    uint       `gorm:"primaryKey" json:"id"`
 	CodeHash              string     `gorm:"uniqueIndex;size:64" json:"-"`
+	PlainCode             string     `gorm:"size:64" json:"plain_code,omitempty"`
 	CodePrefix            string     `gorm:"size:20" json:"code_prefix"`
 	Email                 string     `gorm:"index;size:320;not null" json:"email"`
 	Level                 string     `gorm:"index;size:32;not null" json:"level"`
