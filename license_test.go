@@ -51,6 +51,16 @@ func TestVerifyLicenseReturnsSignedMemberLicense(t *testing.T) {
 	if ok := clientAcceptsSignedLicense(t, envelope, publicKey, "user@example.com", "qmby-test-instance", time.Now().In(beijingLocation())); !ok {
 		t.Fatal("client rejected signed member license")
 	}
+	var license licensePayload
+	if err := json.Unmarshal(envelope.License, &license); err != nil {
+		t.Fatalf("decode license: %v", err)
+	}
+	if license.QmbyVersion != "0.0.28" {
+		t.Fatalf("qmby_version = %q, want 0.0.28", license.QmbyVersion)
+	}
+	if license.ValidUntil.Sub(license.IssuedAt) > 24*time.Hour || !license.ValidUntil.After(license.IssuedAt) {
+		t.Fatalf("unexpected rolling validity window: issued=%s valid_until=%s", license.IssuedAt, license.ValidUntil)
+	}
 
 	var top map[string]json.RawMessage
 	if err := json.Unmarshal(res.Body.Bytes(), &top); err != nil {
@@ -114,7 +124,8 @@ func TestSignedLicenseClientRejectsEmailMismatch(t *testing.T) {
 
 	envelope := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
 		"activation_code": "`+plainCode+`",
-		"instance_id": "qmby-test-instance"
+		"instance_id": "qmby-test-instance",
+		"qmby_version": "0.0.39"
 	}`))
 	if clientAcceptsSignedLicense(t, envelope, publicKey, "other@example.com", "qmby-test-instance", time.Now().In(beijingLocation())) {
 		t.Fatal("client accepted license whose email does not match the request")
@@ -178,7 +189,8 @@ func TestSignedLicenseClientRejectsInstanceIDMismatch(t *testing.T) {
 
 	envelope := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
 		"activation_code": "`+plainCode+`",
-		"instance_id": "qmby-test-instance"
+		"instance_id": "qmby-test-instance",
+		"qmby_version": "0.0.39"
 	}`))
 	if clientAcceptsSignedLicense(t, envelope, publicKey, "user@example.com", "other-instance", time.Now().In(beijingLocation())) {
 		t.Fatal("client accepted license whose instance_id does not match the request")
@@ -206,7 +218,8 @@ func TestVerifyLicenseExpiresPastMember(t *testing.T) {
 
 	envelope := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
 		"activation_code": "`+plainCode+`",
-		"instance_id": "qmby-expired-instance"
+		"instance_id": "qmby-expired-instance",
+		"qmby_version": "0.0.39"
 	}`))
 	if !ed25519.Verify(publicKey, envelope.License, mustDecodeSignature(t, envelope.Signature)) {
 		t.Fatal("signature does not verify over expired license JSON bytes")
@@ -239,7 +252,8 @@ func TestVerifyLicenseRejectsDifferentInstanceAfterActivation(t *testing.T) {
 
 	first := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
 		"activation_code": "`+plainCode+`",
-		"instance_id": "qmby-first-instance"
+		"instance_id": "qmby-first-instance",
+		"qmby_version": "0.0.39"
 	}`))
 	if !clientAcceptsSignedLicense(t, first, publicKey, "user@example.com", "qmby-first-instance", time.Now().In(beijingLocation())) {
 		t.Fatal("first instance did not activate")
@@ -247,7 +261,8 @@ func TestVerifyLicenseRejectsDifferentInstanceAfterActivation(t *testing.T) {
 
 	second := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
 		"activation_code": "`+plainCode+`",
-		"instance_id": "qmby-second-instance"
+		"instance_id": "qmby-second-instance",
+		"qmby_version": "0.0.39"
 	}`))
 	var license licensePayload
 	if err := json.Unmarshal(second.License, &license); err != nil {
@@ -328,6 +343,12 @@ func clientAcceptsSignedLicense(t *testing.T, envelope signedLicenseResponse, pu
 		return false
 	}
 	if license.InstanceID != strings.TrimSpace(instanceID) {
+		return false
+	}
+	if strings.TrimSpace(license.QmbyVersion) == "" {
+		return false
+	}
+	if now.Before(license.IssuedAt.Add(-2*time.Minute)) || !now.Before(license.ValidUntil) {
 		return false
 	}
 	if license.StartsAt != nil && license.StartsAt.After(now) {

@@ -560,6 +560,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 	license := licensePayload{
 		Email:             normalizeEmail(code.Email),
 		InstanceID:        instanceID,
+		QmbyVersion:       strings.TrimSpace(req.QmbyVersion),
 		Member:            member,
 		Level:             code.Level,
 		LevelLabel:        levelDisplayNames[code.Level],
@@ -567,6 +568,8 @@ func (a *app) verifyLicense(c *gin.Context) {
 		StartsAt:          code.StartsAt,
 		ExpiresAt:         code.ExpiresAt,
 		ServerBeijingTime: serverNow,
+		IssuedAt:          serverNow,
+		ValidUntil:        licenseValidUntil(serverNow, code.ExpiresAt),
 		Features:          featurePolicies,
 	}
 	a.writeSignedLicense(c, license)
@@ -575,6 +578,7 @@ func (a *app) verifyLicense(c *gin.Context) {
 type licensePayload struct {
 	Email             string                          `json:"email"`
 	InstanceID        string                          `json:"instance_id"`
+	QmbyVersion       string                          `json:"qmby_version"`
 	Member            bool                            `json:"member"`
 	Level             string                          `json:"level"`
 	LevelLabel        string                          `json:"level_label"`
@@ -582,6 +586,8 @@ type licensePayload struct {
 	StartsAt          *time.Time                      `json:"starts_at"`
 	ExpiresAt         *time.Time                      `json:"expires_at"`
 	ServerBeijingTime time.Time                       `json:"server_beijing_time"`
+	IssuedAt          time.Time                       `json:"issued_at"`
+	ValidUntil        time.Time                       `json:"valid_until"`
 	Features          map[string]FeaturePolicyPayload `json:"features"`
 }
 
@@ -622,6 +628,14 @@ func licenseStatus(member bool, status string) string {
 		return StatusExpired
 	}
 	return "inactive"
+}
+
+func licenseValidUntil(now time.Time, licenseExpiresAt *time.Time) time.Time {
+	validUntil := now.Add(24 * time.Hour)
+	if licenseExpiresAt != nil && licenseExpiresAt.Before(validUntil) {
+		return *licenseExpiresAt
+	}
+	return validUntil
 }
 
 func (a *app) featurePolicies() ([]FeaturePolicy, error) {
