@@ -121,6 +121,47 @@ func TestSignedLicenseClientRejectsEmailMismatch(t *testing.T) {
 	}
 }
 
+func TestRequestTrialCodeCreatesSevenDayPlusCode(t *testing.T) {
+	a, _ := testLicenseApp(t)
+	res := postTrialCode(t, a, `{"email":"Trial@Example.com","instance_id":"qmby-trial-instance","qmby_version":"0.0.39"}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("trial status = %d, body = %s", res.Code, res.Body.String())
+	}
+	var data struct {
+		ActivationCode string `json:"activation_code"`
+		Level          string `json:"level"`
+		DurationDays   int    `json:"duration_days"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &data); err != nil {
+		t.Fatalf("decode trial response: %v", err)
+	}
+	if data.ActivationCode == "" {
+		t.Fatal("activation code is empty")
+	}
+	if data.Level != LevelPlus || data.DurationDays != 7 {
+		t.Fatalf("trial code = level %q duration %d, want plus 7", data.Level, data.DurationDays)
+	}
+	var code ActivationCode
+	if err := a.db.Where("code_hash = ?", hashCode(data.ActivationCode)).First(&code).Error; err != nil {
+		t.Fatalf("load trial code: %v", err)
+	}
+	if code.Email != "trial@example.com" || code.Status != StatusIssued || code.Note != "trial_instance:qmby-trial-instance" {
+		t.Fatalf("unexpected stored trial code: %+v", code)
+	}
+}
+
+func TestRequestTrialCodeRejectsRepeatedInstance(t *testing.T) {
+	a, _ := testLicenseApp(t)
+	first := postTrialCode(t, a, `{"email":"trial@example.com","instance_id":"qmby-trial-instance"}`)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first trial status = %d, body = %s", first.Code, first.Body.String())
+	}
+	second := postTrialCode(t, a, `{"email":"other@example.com","instance_id":"qmby-trial-instance"}`)
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second trial status = %d, body = %s", second.Code, second.Body.String())
+	}
+}
+
 func TestSignedLicenseClientRejectsInstanceIDMismatch(t *testing.T) {
 	a, publicKey := testLicenseApp(t)
 	plainCode := "QMBY-TEST-0003"
@@ -239,6 +280,18 @@ func postVerifyLicense(t *testing.T, a *app, body string) *httptest.ResponseReco
 	r := gin.New()
 	r.POST("/api/license/verify", a.requireLicenseKey(), a.verifyLicense)
 	req := httptest.NewRequest(http.MethodPost, "/api/license/verify", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-key")
+	res := httptest.NewRecorder()
+	r.ServeHTTP(res, req)
+	return res
+}
+
+func postTrialCode(t *testing.T, a *app, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	r := gin.New()
+	r.POST("/api/license/trial", a.requireLicenseKey(), a.requestTrialCode)
+	req := httptest.NewRequest(http.MethodPost, "/api/license/trial", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer test-key")
 	res := httptest.NewRecorder()

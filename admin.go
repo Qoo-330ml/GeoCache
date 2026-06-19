@@ -279,7 +279,7 @@ func adminHTMLStart(page adminPage) string {
   </style>
 </head>
 <body>
-  <main id="loginView" class="login-screen">
+  <main id="loginView" class="login-screen hidden">
     <section class="login-card">
       <div class="brand">
         <div class="brand-mark">Q</div>
