@@ -481,10 +481,11 @@ func (a *app) verifyLicense(c *gin.Context) {
 			}
 		}
 
-		instanceMismatch := code.Status == StatusActive &&
-			strings.TrimSpace(code.LastInstanceID) != "" &&
-			instanceID != "" &&
-			strings.TrimSpace(code.LastInstanceID) != instanceID
+		instanceAllowed, err := activationInstanceAllowed(tx, code.ID, code.Level, instanceID)
+		if err != nil {
+			return err
+		}
+		instanceMismatch := code.Status == StatusActive && !instanceAllowed
 
 		if code.Status == StatusIssued && !instanceMismatch {
 			code.Status = StatusActive
@@ -573,6 +574,43 @@ func (a *app) verifyLicense(c *gin.Context) {
 		Features:          featurePolicies,
 	}
 	a.writeSignedLicense(c, license)
+}
+
+func activationInstanceAllowed(tx *gorm.DB, codeID uint, level, instanceID string) (bool, error) {
+	instanceID = strings.TrimSpace(instanceID)
+	if instanceID == "" {
+		return false, nil
+	}
+
+	var existing int64
+	if err := tx.Model(&ClientInstall{}).
+		Where("activation_code_id = ? AND instance_id = ? AND member = ?", codeID, instanceID, true).
+		Count(&existing).Error; err != nil {
+		return false, err
+	}
+	if existing > 0 {
+		return true, nil
+	}
+
+	var activatedInstances int64
+	if err := tx.Model(&ClientInstall{}).
+		Where("activation_code_id = ? AND member = ?", codeID, true).
+		Distinct("instance_id").
+		Count(&activatedInstances).Error; err != nil {
+		return false, err
+	}
+	return activatedInstances < int64(activationInstanceLimit(level)), nil
+}
+
+func activationInstanceLimit(level string) int {
+	switch level {
+	case LevelPlus:
+		return 2
+	case LevelPro, LevelPermanent:
+		return 5
+	default:
+		return 1
+	}
 }
 
 type licensePayload struct {

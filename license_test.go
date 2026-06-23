@@ -236,43 +236,60 @@ func TestVerifyLicenseExpiresPastMember(t *testing.T) {
 	}
 }
 
-func TestVerifyLicenseRejectsDifferentInstanceAfterActivation(t *testing.T) {
-	a, publicKey := testLicenseApp(t)
-	plainCode := "QMBY-TEST-0005"
-	if err := a.db.Create(&ActivationCode{
-		CodeHash:     hashCode(plainCode),
-		CodePrefix:   codePrefix(plainCode),
-		Email:        "user@example.com",
-		Level:        LevelPermanent,
-		DurationDays: levelDurationDays[LevelPermanent],
-		Status:       StatusIssued,
-	}).Error; err != nil {
-		t.Fatalf("create activation code: %v", err)
+func TestVerifyLicenseAllowsLevelInstanceLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		plainCode string
+		level     string
+		limit     int
+	}{
+		{name: "plus", plainCode: "QMBY-TEST-0005", level: LevelPlus, limit: 2},
+		{name: "pro", plainCode: "QMBY-TEST-0006", level: LevelPro, limit: 5},
 	}
 
-	first := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
-		"activation_code": "`+plainCode+`",
-		"instance_id": "qmby-first-instance",
-		"qmby_version": "0.0.39"
-	}`))
-	if !clientAcceptsSignedLicense(t, first, publicKey, "user@example.com", "qmby-first-instance", time.Now().In(beijingLocation())) {
-		t.Fatal("first instance did not activate")
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, publicKey := testLicenseApp(t)
+			if err := a.db.Create(&ActivationCode{
+				CodeHash:     hashCode(tt.plainCode),
+				CodePrefix:   codePrefix(tt.plainCode),
+				Email:        "user@example.com",
+				Level:        tt.level,
+				DurationDays: levelDurationDays[tt.level],
+				Status:       StatusIssued,
+			}).Error; err != nil {
+				t.Fatalf("create activation code: %v", err)
+			}
 
-	second := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
-		"activation_code": "`+plainCode+`",
-		"instance_id": "qmby-second-instance",
-		"qmby_version": "0.0.39"
-	}`))
-	var license licensePayload
-	if err := json.Unmarshal(second.License, &license); err != nil {
-		t.Fatalf("decode license: %v", err)
-	}
-	if license.Member {
-		t.Fatalf("second instance reused activation code: %+v", license)
-	}
-	if license.Status != "inactive" {
-		t.Fatalf("status = %q, want inactive", license.Status)
+			for i := 1; i <= tt.limit; i++ {
+				instanceID := "qmby-instance-" + string(rune('0'+i))
+				envelope := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
+					"activation_code": "`+tt.plainCode+`",
+					"instance_id": "`+instanceID+`",
+					"qmby_version": "0.0.39"
+				}`))
+				if !clientAcceptsSignedLicense(t, envelope, publicKey, "user@example.com", instanceID, time.Now().In(beijingLocation())) {
+					t.Fatalf("instance %d did not activate", i)
+				}
+			}
+
+			blockedInstanceID := "qmby-instance-blocked"
+			blocked := decodeVerifyEnvelope(t, postVerifyLicense(t, a, `{
+				"activation_code": "`+tt.plainCode+`",
+				"instance_id": "`+blockedInstanceID+`",
+				"qmby_version": "0.0.39"
+			}`))
+			var license licensePayload
+			if err := json.Unmarshal(blocked.License, &license); err != nil {
+				t.Fatalf("decode license: %v", err)
+			}
+			if license.Member {
+				t.Fatalf("instance over %s limit activated: %+v", tt.name, license)
+			}
+			if license.Status != "inactive" {
+				t.Fatalf("status = %q, want inactive", license.Status)
+			}
+		})
 	}
 }
 
