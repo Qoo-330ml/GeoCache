@@ -24,7 +24,7 @@ func serveAdminClients(c *gin.Context) {
       <div class="panel-body">
         <div class="client-filters">
           <div><label>搜索</label><input id="clientSearch" placeholder="邮箱、实例或IP" oninput="loadClientsDebounced()" /></div>
-          <div><label>活跃</label><select id="clientActive" onchange="loadClients()"><option value="">全部</option><option value="1">10分钟内</option></select></div>
+          <div><label>活跃</label><select id="clientActive" onchange="loadClients()"><option value="">全部</option><option value="1">6小时内</option></select></div>
           <div><label>会员</label><select id="clientMember" onchange="loadClients()"><option value="">全部</option><option value="1">会员</option></select></div>
           <button class="secondary" onclick="loadClients()">查询</button>
         </div>

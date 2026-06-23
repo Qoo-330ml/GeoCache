@@ -12,7 +12,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const activeClientWindow = 10 * time.Minute
+const activeClientWindow = 6 * time.Hour
 
 type geoReportPayload struct {
 	IP          string   `json:"ip"`

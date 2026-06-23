@@ -30,7 +30,7 @@ func serveAdmin(c *gin.Context) {
       <div class="panel-body">
         <div class="stats-grid">
           <div class="stat"><div id="statInstalled" class="stat-value">-</div><div class="stat-label">累计联网安装</div></div>
-          <div class="stat"><div id="statActive" class="stat-value">-</div><div class="stat-label">正在使用（10分钟）</div></div>
+          <div class="stat"><div id="statActive" class="stat-value">-</div><div class="stat-label">正在使用（6小时）</div></div>
           <div class="stat"><div id="statActiveMembers" class="stat-value">-</div><div class="stat-label">活跃会员客户端</div></div>
           <div class="stat"><div id="statChecks24h" class="stat-value">-</div><div class="stat-label">24小时校验</div></div>
           <div class="stat"><div id="statIPReports" class="stat-value">-</div><div class="stat-label">IP归属地记录</div></div>
