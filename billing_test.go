@@ -47,8 +47,10 @@ func TestCreateBillingOrderSendsSignedXorPayRequest(t *testing.T) {
 		}
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"status": "ok",
-			"qr":     "https://xorpay.example/qr.png",
-			"aoid":   "xo-1001",
+			"info": map[string]any{
+				"qr": "https://xorpay.example/qr.png",
+			},
+			"aoid": "xo-1001",
 		})
 	}))
 	defer xorpay.Close()

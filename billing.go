@@ -589,6 +589,7 @@ func parseXorPayCreateResponse(raw string) xorpayCreateResponse {
 	status := strings.ToLower(firstNonEmpty(stringField(lower, "status"), stringField(lower, "code")))
 	ok := status == "ok" || status == "success" || status == "1" || status == "200"
 	qr := firstNonEmpty(
+		nestedStringField(lower, "info", "qr"),
 		stringField(lower, "qr"),
 		stringField(lower, "qrcode"),
 		stringField(lower, "qr_url"),
@@ -599,6 +600,9 @@ func parseXorPayCreateResponse(raw string) xorpayCreateResponse {
 	aoid := firstNonEmpty(stringField(lower, "aoid"), stringField(lower, "id"), stringField(lower, "trade_no"))
 	if qr != "" && status == "" && message == "" {
 		ok = true
+	}
+	if !ok && message == "" {
+		message = firstNonEmpty(status, "create xorpay order failed")
 	}
 	return xorpayCreateResponse{OK: ok, ProviderOrderID: aoid, QR: qr, Raw: raw, Message: message}
 }
@@ -619,6 +623,23 @@ func stringField(values map[string]any, key string) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(typed))
 	}
+}
+
+func nestedStringField(values map[string]any, key, nestedKey string) string {
+	value, ok := values[key]
+	if !ok || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		return stringField(typed, nestedKey)
+	case string:
+		var nested map[string]any
+		if err := json.Unmarshal([]byte(typed), &nested); err == nil {
+			return stringField(nested, nestedKey)
+		}
+	}
+	return ""
 }
 
 func parseXorPayTime(value string, fallback time.Time) *time.Time {
