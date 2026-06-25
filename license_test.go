@@ -243,8 +243,8 @@ func TestVerifyLicenseAllowsLevelInstanceLimit(t *testing.T) {
 		level     string
 		limit     int
 	}{
-		{name: "plus", plainCode: "QMBY-TEST-0005", level: LevelPlus, limit: 2},
-		{name: "pro", plainCode: "QMBY-TEST-0006", level: LevelPro, limit: 5},
+		{name: "plus", plainCode: "QMBY-TEST-0005", level: LevelPlus, limit: 1},
+		{name: "pro", plainCode: "QMBY-TEST-0006", level: LevelPro, limit: 3},
 	}
 
 	for _, tt := range tests {

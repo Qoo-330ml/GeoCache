@@ -15,6 +15,13 @@ const (
 	StatusDisabled = "disabled"
 	StatusExpired  = "expired"
 
+	OrderStatusPending   = "pending"
+	OrderStatusPaid      = "paid"
+	OrderStatusFulfilled = "fulfilled"
+	OrderStatusActivated = "activated"
+	OrderStatusExpired   = "expired"
+	OrderStatusFailed    = "failed"
+
 	FeatureAccessFree     = "free"
 	FeatureAccessMember   = "member"
 	FeatureAccessPlus     = "plus"
@@ -69,6 +76,17 @@ type MailSetting struct {
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
+type PaymentSetting struct {
+	ID                 uint      `gorm:"primaryKey" json:"id"`
+	PublicBaseURL      string    `gorm:"size:512" json:"public_base_url"`
+	XorPayAID          string    `gorm:"size:128" json:"xorpay_aid"`
+	XorPaySecret       string    `gorm:"size:512" json:"-"`
+	EnabledPayTypes    string    `gorm:"size:64" json:"enabled_pay_types"`
+	OrderExpireSeconds int       `gorm:"not null;default:7200" json:"order_expire_seconds"`
+	CreatedAt          time.Time `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedAt          time.Time `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
 type FeaturePolicyPayload struct {
 	Label   string `json:"label"`
 	Access  string `json:"access"`
@@ -111,6 +129,32 @@ type ActivationCode struct {
 	Note                  string     `gorm:"size:512" json:"note"`
 	CreatedAt             time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
 	UpdatedAt             time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
+}
+
+type PaymentOrder struct {
+	ID                  uint       `gorm:"primaryKey" json:"id"`
+	OrderID             string     `gorm:"uniqueIndex;size:64;not null" json:"order_id"`
+	Provider            string     `gorm:"index;size:32;not null" json:"provider"`
+	PayType             string     `gorm:"index;size:32;not null" json:"pay_type"`
+	PlanKey             string     `gorm:"index;size:64;not null" json:"plan_key"`
+	PlanLevel           string     `gorm:"index;size:32;not null" json:"plan_level"`
+	DurationDays        int        `gorm:"not null;default:0" json:"duration_days"`
+	AmountCents         int        `gorm:"not null" json:"amount_cents"`
+	Status              string     `gorm:"index;size:32;not null;default:pending" json:"status"`
+	Email               string     `gorm:"index;size:320;not null" json:"email"`
+	InstanceID          string     `gorm:"index;size:128;not null" json:"instance_id"`
+	ActivationCodeID    *uint      `gorm:"index" json:"activation_code_id"`
+	ActivationCodePlain string     `gorm:"size:64" json:"-"`
+	ProviderOrderID     string     `gorm:"index;size:128" json:"provider_order_id"`
+	ProviderPayload     string     `gorm:"type:text" json:"provider_payload"`
+	PayQRCode           string     `gorm:"type:text" json:"pay_qr"`
+	PaidAt              *time.Time `gorm:"index" json:"paid_at"`
+	FulfilledAt         *time.Time `json:"fulfilled_at"`
+	EmailSentAt         *time.Time `json:"email_sent_at"`
+	ExpiresAt           time.Time  `gorm:"index" json:"expires_at"`
+	LastError           string     `gorm:"size:512" json:"last_error"`
+	CreatedAt           time.Time  `gorm:"autoCreateTime;index" json:"created_at"`
+	UpdatedAt           time.Time  `gorm:"autoUpdateTime" json:"updated_at"`
 }
 
 type LicenseCheck struct {

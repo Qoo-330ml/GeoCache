@@ -29,7 +29,7 @@ func openDatabase(path string) (*gorm.DB, error) {
 	}
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
-	if err := db.AutoMigrate(&ActivationCode{}, &LicenseCheck{}, &ClientInstall{}, &IPReport{}, &IPBest{}, &FeaturePolicy{}, &MailSetting{}, &OrganizerFailedRecordSubmission{}, &OrganizerFailedRecord{}, &QshareResource{}, &QshareFile{}, &QshareForwardRequest{}); err != nil {
+	if err := db.AutoMigrate(&ActivationCode{}, &LicenseCheck{}, &ClientInstall{}, &IPReport{}, &IPBest{}, &FeaturePolicy{}, &MailSetting{}, &PaymentSetting{}, &PaymentOrder{}, &OrganizerFailedRecordSubmission{}, &OrganizerFailedRecord{}, &QshareResource{}, &QshareFile{}, &QshareForwardRequest{}); err != nil {
 		return nil, fmt.Errorf("migrate database: %w", err)
 	}
 	if err := migrateLegacyCodesToBeta(db); err != nil {

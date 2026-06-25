@@ -27,12 +27,13 @@ import (
 )
 
 type app struct {
-	db            *gorm.DB
-	adminUser     string
-	adminPassword string
-	licenseAPIKey string
-	signingKey    ed25519.PrivateKey
-	mailer        smtpMailer
+	db               *gorm.DB
+	adminUser        string
+	adminPassword    string
+	licenseAPIKey    string
+	signingKey       ed25519.PrivateKey
+	mailer           smtpMailer
+	xorpayHTTPClient *http.Client
 }
 
 func main() {
@@ -61,12 +62,17 @@ func main() {
 	r.GET("/admin/mail", serveAdminMail)
 	r.GET("/admin/features", serveAdminFeatures)
 	r.GET("/admin/codes", serveAdminCodes)
+	r.GET("/admin/payment", serveAdminPayment)
 	r.GET("/admin/clients", serveAdminClients)
 	r.GET("/admin/ip-bests", serveAdminIPBests)
 	r.GET("/admin/qshare", serveAdminQshare)
 	r.GET("/health", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	r.POST("/api/license/verify", a.requireLicenseKey(), a.verifyLicense)
 	r.POST("/api/license/trial", a.requireLicenseKey(), a.requestTrialCode)
+	r.GET("/api/billing/plans", a.requireLicenseKey(), a.listBillingPlans)
+	r.POST("/api/billing/orders", a.requireLicenseKey(), a.createBillingOrder)
+	r.GET("/api/billing/orders/:order_id", a.requireLicenseKey(), a.getBillingOrder)
+	r.POST("/api/pay/xorpay/notify", a.xorpayNotify)
 	r.POST("/api/ip/report", a.requireLicenseKey(), a.reportIP)
 	r.POST("/api/organizer/failed-records", a.requireLicenseKey(), a.submitOrganizerFailedRecords)
 	r.POST("/api/qshare/status", a.requireLicenseKey(), a.qshareStatus)
@@ -88,6 +94,9 @@ func main() {
 	admin.GET("/mail-settings", a.getMailSettings)
 	admin.PUT("/mail-settings", a.updateMailSettings)
 	admin.POST("/mail-settings/test", a.testMailSettings)
+	admin.GET("/payment/settings", a.getPaymentSettings)
+	admin.PUT("/payment/settings", a.updatePaymentSettings)
+	admin.GET("/payment/orders", a.listPaymentOrders)
 	admin.GET("/stats", a.telemetryStats)
 	admin.GET("/clients", a.listClients)
 	admin.GET("/ip-bests", a.listIPBests)
@@ -512,6 +521,16 @@ func (a *app) verifyLicense(c *gin.Context) {
 		if err := tx.Save(&code).Error; err != nil {
 			return err
 		}
+		if member && strings.HasPrefix(code.Note, "billing_order:") {
+			orderID := strings.TrimSpace(strings.TrimPrefix(code.Note, "billing_order:"))
+			if orderID != "" {
+				if err := tx.Model(&PaymentOrder{}).
+					Where("order_id = ? AND status = ?", orderID, OrderStatusFulfilled).
+					Update("status", OrderStatusActivated).Error; err != nil {
+					return err
+				}
+			}
+		}
 
 		check := LicenseCheck{
 			ActivationCodeID:  code.ID,
@@ -605,9 +624,9 @@ func activationInstanceAllowed(tx *gorm.DB, codeID uint, level, instanceID strin
 func activationInstanceLimit(level string) int {
 	switch level {
 	case LevelPlus:
-		return 2
+		return 1
 	case LevelPro, LevelPermanent:
-		return 5
+		return 3
 	default:
 		return 1
 	}
